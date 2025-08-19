@@ -1,186 +1,251 @@
-// src/main.rs
+import os
+import struct
+import numpy as np
+import warnings
+from tqdm import tqdm
+from sklearn.mixture import GaussianMixture
+from sklearn.cluster import KMeans
+from scipy.interpolate import interp1d
+import librosa
+import librosa.feature
+from typing import Any, cast
 
-use std::fs;
-use std::io::{Cursor, Read};
-use byteorder::{LittleEndian, ReadBytesExt};
-use half::f16;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::sync::{Arc, Mutex};
-use rustfft::{FftPlanner, num_complex::Complex, DctPlanner};
-use ndarray::{Array, Array1, Array2};
+# Optional DTW import with fallback
+try:
+    import dtw as dtw_module
+    DTW_AVAILABLE = True
+except ImportError:
+    dtw_module = None  # type: ignore
+    DTW_AVAILABLE = False
+    print("Warning: DTW not available. Using simple averaging for alignment.")
 
-// --- Constants ---
-const TARGET_SR: u32 = 16000;
-const FRAME_LENGTH_MS: u32 = 25;
-const FRAME_STRIDE_MS: u32 = 10;
-const FRAME_LENGTH_SAMPLES: usize = (TARGET_SR as f32 * (FRAME_LENGTH_MS as f32 / 1000.0)) as usize; // 400
-const FRAME_STRIDE_SAMPLES: usize = (TARGET_SR as f32 * (FRAME_STRIDE_MS as f32 / 1000.0)) as usize; // 160
-const N_MFCC: usize = 13;
-const N_FFT: usize = FRAME_LENGTH_SAMPLES;
-const N_MELS: usize = 40;
+# --- Configuration ---
+AUGMENTED_FOLDER = "data/03_augmented/"
+PATTERNS_FOLDER = "data/05_patterns/"
+FILES_PER_PHONEME_TO_PROCESS = 500
+SAMPLE_RATE = 16000
+FRAME_LENGTH = 2048
+HOP_LENGTH = 512
+N_MFCC = 13
 
-#[derive(Debug)]
-struct MasterPattern { /* ... same as before ... */
-    phoneme: String,
-    energy_template: Vec<f32>,
-    centroid_template: Vec<f32>,
-    zcr_template: Vec<u8>,
-    gmm_weights: Vec<f32>,
-    gmm_means: Vec<f32>,
-    gmm_covariances: Vec<f32>,
-    transition_matrix: Vec<f32>,
-    min_duration: f32,
-    max_duration: f32,
-    mfcc_mean: Vec<f32>,
-    mfcc_std: Vec<f32>,
-}
-#[derive(Debug)]
-struct LiveFeatures { mfccs: Vec<f32> }
+# --- Suppress scikit-learn warnings for cleaner output ---
+warnings.filterwarnings("ignore", category=UserWarning)
 
-fn parse_dbp_file(bytes: &[u8], phoneme: String) -> Result<MasterPattern, std::io::Error> {
-    // ... (this function is correct and remains the same)
-    let mut cursor = Cursor::new(bytes);
+# --- Helper Functions ---
+def extract_features(filepath):
+    """Extract real audio features using librosa."""
+    try:
+        y, sr = librosa.load(filepath, sr=SAMPLE_RATE)
 
-    fn read_f32_vec(cursor: &mut Cursor<&[u8]>, len: usize) -> std::io::Result<Vec<f32>> {
-        let mut vec = Vec::with_capacity(len);
-        for _ in 0..len { vec.push(cursor.read_f32::<LittleEndian>()?); } Ok(vec)
-    }
-    fn read_f16_as_f32_vec(cursor: &mut Cursor<&[u8]>, len: usize) -> std::io::Result<Vec<f32>> {
-        let mut vec = Vec::with_capacity(len);
-        for _ in 0..len { let bits = cursor.read_u16::<LittleEndian>()?; vec.push(f16::from_bits(bits).to_f32()); } Ok(vec)
-    }
-    let energy_template = read_f16_as_f32_vec(&mut cursor, 200)?;
-    let centroid_template = read_f16_as_f32_vec(&mut cursor, 200)?;
-    let mut zcr_template = vec![0u8; 200];
-    cursor.read_exact(&mut zcr_template)?;
-    cursor.set_position(10 * 1024);
-    let gmm_weights = read_f32_vec(&mut cursor, 5)?;
-    let gmm_means = read_f32_vec(&mut cursor, 5 * 13)?;
-    let gmm_covariances = read_f32_vec(&mut cursor, 5 * 13 * 13)?;
-    let transition_matrix = read_f16_as_f32_vec(&mut cursor, 50 * 50)?;
-    cursor.set_position(80 * 1024);
-    let min_duration = cursor.read_f32::<LittleEndian>()?;
-    let max_duration = cursor.read_f32::<LittleEndian>()?;
-    let mfcc_mean = read_f32_vec(&mut cursor, 13)?;
-    let mfcc_std = read_f32_vec(&mut cursor, 13)?;
-    Ok(MasterPattern {
-        phoneme, energy_template, centroid_template, zcr_template, gmm_weights, gmm_means,
-        gmm_covariances, transition_matrix, min_duration, max_duration, mfcc_mean, mfcc_std,
-    })
-}
+        if len(y) < FRAME_LENGTH:
+            return None, None, None, None, None
 
-// --- Self-contained MFCC implementation ---
-struct MfccExtractor {
-    mel_filterbank: Array2<f32>,
-}
+        mfccs = librosa.feature.mfcc(
+            y=y, sr=sr, n_mfcc=N_MFCC,
+            hop_length=HOP_LENGTH, n_fft=FRAME_LENGTH
+        ).T
 
-impl MfccExtractor {
-    fn new() -> Self {
-        fn hz_to_mel(hz: f32) -> f32 { 2595.0 * (1.0 + hz / 700.0).log10() }
-        fn mel_to_hz(mel: f32) -> f32 { 700.0 * (10.0f32.powf(mel / 2595.0) - 1.0) }
+        energy = librosa.feature.rms(y=y, hop_length=HOP_LENGTH)[0]
+        zcr = librosa.feature.zero_crossing_rate(y, hop_length=HOP_LENGTH)[0]
+        centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP_LENGTH)[0]
+        duration = len(y) / sr
 
-        let min_mel = hz_to_mel(0.0);
-        let max_mel = hz_to_mel(TARGET_SR as f32 / 2.0);
-        let mel_points = Array::linspace(min_mel, max_mel, N_MELS + 2);
-        let hz_points = mel_points.mapv(mel_to_hz);
-        let fft_bins = (hz_points / (TARGET_SR as f32 / 2.0) * (N_FFT as f32 / 2.0)).mapv(|x| x.floor() as usize);
+        return mfccs, energy, zcr, centroid, duration
 
-        let mut filters = Array2::<f32>::zeros((N_MELS, N_FFT / 2 + 1));
-        for m in 0..N_MELS {
-            let start = fft_bins[m];
-            let center = fft_bins[m + 1];
-            let end = fft_bins[m + 2];
-            for k in start..center {
-                if center != start { filters[[m, k]] = (k - start) as f32 / (center - start) as f32; }
-            }
-            for k in center..end {
-                if end != center { filters[[m, k]] = (end - k) as f32 / (end - center) as f32; }
-            }
-        }
-        Self { mel_filterbank: filters }
-    }
+    except Exception as e:
+        print(f"Error processing {filepath}: {e}")
+        return None, None, None, None, None
 
-    fn extract(&self, frame: &[f32]) -> Vec<f32> {
-        let window = apodize::hanning_array(frame.len());
-        let mut windowed_frame: Vec<f32> = frame.iter().zip(window.iter()).map(|(s, w)| s * w).collect();
+def align_sequences_dtw(sequences, reference_idx=None):
+    """Align sequences using DTW if available, otherwise use simple interpolation."""
+    if not sequences:
+        return []
 
-        let mut planner = FftPlanner::new();
-        let fft = planner.plan_fft_forward(N_FFT);
-        let mut buffer: Vec<Complex<f32>> = windowed_frame.iter().map(|&x| Complex::new(x, 0.0)).collect();
-        buffer.resize(N_FFT, Complex::default());
-        fft.process(&mut buffer);
+    lengths = [len(seq) for seq in sequences]
+    if reference_idx is None:
+        reference_idx = np.argsort(lengths)[len(lengths) // 2]
 
-        let power_spec: Array1<f32> = buffer[..N_FFT / 2 + 1].iter().map(|c| c.norm_sqr()).collect();
-        let mel_spec = self.mel_filterbank.dot(&power_spec);
-        let log_mel_spec = mel_spec.mapv(|v| if v > 1e-6 { v.ln() } else { 0.0 });
+    reference = sequences[reference_idx]
+    aligned_sequences = []
 
-        let mut dct_planner = DctPlanner::new();
-        let dct = dct_planner.plan_dct2(N_MELS);
-        let mut mfccs = log_mel_spec.to_vec();
-        dct.process_dct2(&mut mfccs);
+    if DTW_AVAILABLE and dtw_module is not None and len(sequences) > 1:
+        for seq in tqdm(sequences, desc="DTW Alignment", leave=False):
+            if len(seq) == 0:
+                continue
+            try:
+                alignment = dtw_module.dtw(reference, seq, keep_internals=True)
+                index2 = getattr(alignment, "index2", None)
+                if index2 is not None:
+                    warped_seq = seq[index2]
+                    aligned_sequences.append(warped_seq)
+                else:
+                    aligned_sequences.append(interpolate_to_length(seq, len(reference)))
+            except Exception:
+                aligned_sequences.append(interpolate_to_length(seq, len(reference)))
+    else:
+        target_length = len(reference)
+        for seq in sequences:
+            aligned_sequences.append(interpolate_to_length(seq, target_length))
 
-        mfccs.truncate(N_MFCC);
-        mfccs
-    }
-}
+    return aligned_sequences
 
-fn main() {
-    println!("Starting Dhvani Real-Time Engine...");
+def interpolate_to_length(sequence, target_length):
+    """Interpolate sequence to target length."""
+    if len(sequence) < 2:
+        return np.zeros(target_length)
 
-    let patterns = Arc::new(Mutex::new(Vec::<MasterPattern>::new()));
-    // ... (loading patterns is the same)
-    let pattern_files = fs::read_dir("data/05_patterns/").expect("Could not read patterns directory");
-    let mut loaded_patterns = patterns.lock().unwrap();
-    for entry in pattern_files {
-        let path = entry.unwrap().path();
-        if path.extension().map_or(false, |s| s == "dbp") {
-            let phoneme = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let file_bytes = fs::read(&path).unwrap();
-            if let Ok(pattern) = parse_dbp_file(&file_bytes, phoneme) { loaded_patterns.push(pattern); }
-        }
-    }
-    println!("✅ {} patterns loaded successfully.", loaded_patterns.len());
-    drop(loaded_patterns);
+    original_indices = np.linspace(0, 1, len(sequence))
+    target_indices = np.linspace(0, 1, target_length)
 
-    let audio_buffer = Arc::new(Mutex::new(Vec::<f32>::new()));
-    let host = cpal::default_host();
-    let device = host.default_input_device().expect("No input device available");
-    let config = device.default_input_config().expect("Failed to get default input config");
-    let input_sr = config.sample_rate().0;
-    let err_fn = |err| eprintln!("an error occurred on the audio stream: {}", err);
-    let buffer_clone = audio_buffer.clone();
+    try:
+        interpolator = interp1d(
+            original_indices,
+            sequence,
+            kind="linear",
+            bounds_error=False,
+            fill_value=cast(Any, "extrapolate")  # now works
+        )
+        return interpolator(target_indices)
+    except Exception:
+        if len(sequence) >= target_length:
+            return sequence[:target_length]
+        else:
+            return np.pad(sequence, (0, target_length - len(sequence)), mode="edge")
 
-    let stream = device.build_input_stream(&config.into(), move |data: &[f32], _: &cpal::InputCallbackInfo| {
-        let mut buffer = buffer_clone.lock().unwrap();
-        let step = input_sr as f32 / TARGET_SR as f32;
-        let mut i: f32 = 0.0; // Explicitly define type as f32
-        while (i.floor() as usize) < data.len() {
-            let index = i.floor() as usize;
-            let mono_sample = (data[index] + data.get(index + 1).unwrap_or(&data[index])) / 2.0;
-            buffer.push(mono_sample);
-            i += step;
-        }
-    }, err_fn, None).expect("Failed to build input stream");
+def create_transition_matrix(kmeans_labels, n_clusters):
+    """Create transition matrix from K-means cluster labels."""
+    transition_matrix = np.zeros((n_clusters, n_clusters))
+    for i in range(len(kmeans_labels) - 1):
+        transition_matrix[kmeans_labels[i], kmeans_labels[i + 1]] += 1
+    row_sums = transition_matrix.sum(axis=1)
+    row_sums[row_sums == 0] = 1
+    return transition_matrix / row_sums[:, np.newaxis]
 
-    stream.play().expect("Failed to play stream");
-    println!("\nListening... (Press Ctrl+C to stop)");
+def resample_to_fixed_length(array, target_length=200):
+    """Resample array to fixed length for binary storage."""
+    if len(array) == 0:
+        return np.zeros(target_length)
+    return interpolate_to_length(array, target_length)
 
-    let extractor = MfccExtractor::new();
+# --- Main Training Script ---
+def build_master_patterns():
+    print("Starting master pattern generation...")
+    os.makedirs(PATTERNS_FOLDER, exist_ok=True)
 
-    loop {
-        let mut buffer = audio_buffer.lock().unwrap();
-        while buffer.len() >= FRAME_LENGTH_SAMPLES {
-            let frame: Vec<f32> = buffer[..FRAME_LENGTH_SAMPLES].to_vec();
+    if not os.path.exists(AUGMENTED_FOLDER):
+        print(f"Error: Augmented folder '{AUGMENTED_FOLDER}' not found!")
+        return
 
-            let mfccs = extractor.extract(&frame);
+    phoneme_dirs = [
+        d for d in os.listdir(AUGMENTED_FOLDER)
+        if os.path.isdir(os.path.join(AUGMENTED_FOLDER, d))
+    ]
+    if not phoneme_dirs:
+        print("No phoneme directories found!")
+        return
 
-            println!("Live fingerprint (first 3 MFCCs): [{:.2}, {:.2}, {:.2}]", mfccs[0], mfccs[1], mfccs[2]);
+    print(f"Found {len(phoneme_dirs)} phoneme directories")
 
-            // TODO: Final Step - Calculate probabilities and update state machines
+    for phoneme in tqdm(phoneme_dirs, desc="Overall Progress"):
+        augmented_phoneme_dir = os.path.join(AUGMENTED_FOLDER, phoneme)
+        audio_extensions = {".wav", ".mp3", ".flac", ".m4a"}
+        all_files = [
+            os.path.join(augmented_phoneme_dir, f)
+            for f in os.listdir(augmented_phoneme_dir)
+            if any(f.lower().endswith(ext) for ext in audio_extensions)
+        ]
+        if not all_files:
+            print(f"No audio files found for phoneme '{phoneme}'")
+            continue
 
-            buffer.drain(..FRAME_STRIDE_SAMPLES);
-        }
-        drop(buffer);
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}
+        files_to_process = all_files[:FILES_PER_PHONEME_TO_PROCESS]
+        with tqdm(total=6, desc=f"Training '{phoneme}'", leave=False) as pbar:
+            all_mfccs_list, all_energies, all_zcrs, all_centroids, all_durations = [], [], [], [], []
+            for f in files_to_process:
+                mfccs, energy, zcr, centroid, duration = extract_features(f)
+                if mfccs is not None and len(mfccs) > 0:
+                    all_mfccs_list.append(mfccs)
+                    all_energies.append(energy)
+                    all_zcrs.append(zcr)
+                    all_centroids.append(centroid)
+                    all_durations.append(duration)
+            if not all_mfccs_list:
+                print(f"No valid features extracted for phoneme '{phoneme}'")
+                continue
+            pbar.update(1)
+
+            aligned_energies = align_sequences_dtw(all_energies)
+            aligned_centroids = align_sequences_dtw(all_centroids)
+            aligned_zcrs = align_sequences_dtw(all_zcrs)
+            if aligned_energies:
+                TARGET_LEN = 200
+                aligned_energies = [resample_to_fixed_length(seq, TARGET_LEN) for seq in aligned_energies]
+                aligned_centroids = [resample_to_fixed_length(seq, TARGET_LEN) for seq in aligned_centroids]
+                aligned_zcrs = [resample_to_fixed_length(seq, TARGET_LEN) for seq in aligned_zcrs]
+
+                avg_energy = np.mean(aligned_energies, axis=0)
+                avg_centroid = np.mean(aligned_centroids, axis=0)
+                avg_zcr = np.mean(aligned_zcrs, axis=0)
+
+                energy_template = avg_energy.astype(np.float16)
+                centroid_template = avg_centroid.astype(np.float16)
+                zcr_template = (avg_zcr * 255).astype(np.uint8)
+            else:
+                energy_template = np.zeros(200, dtype=np.float16)
+                centroid_template = np.zeros(200, dtype=np.float16)
+                zcr_template = np.zeros(200, dtype=np.uint8)
+
+            all_mfcc_frames = np.vstack(all_mfccs_list)
+            n_clusters = min(50, len(all_mfcc_frames) // 2)
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto").fit(all_mfcc_frames)
+            cluster_labels = kmeans.labels_
+            transition_matrix = create_transition_matrix(cluster_labels, n_clusters)
+            pbar.update(1)
+
+            n_components = min(5, len(all_mfcc_frames) // 10)
+            n_components = max(1, n_components)
+            gmm = GaussianMixture(
+                n_components=n_components, covariance_type="full",
+                random_state=42, max_iter=100
+            ).fit(all_mfcc_frames)
+            pbar.update(1)
+
+            min_duration, max_duration = np.min(all_durations), np.max(all_durations)
+            mean_duration, std_duration = np.mean(all_durations), np.std(all_durations)
+            num_samples = len(all_durations)
+            pbar.update(1)
+
+            output_pattern_path = os.path.join(PATTERNS_FOLDER, f"{phoneme}.dbp")
+            with open(output_pattern_path, "wb") as f:
+                f.write(energy_template.tobytes())
+                f.write(centroid_template.tobytes())
+                f.write(zcr_template.tobytes())
+                padding_needed = (10 * 1024) - f.tell()
+                if padding_needed > 0:
+                    f.write(b"\x00" * padding_needed)
+                assert gmm.weights_ is not None
+                assert gmm.means_ is not None
+                assert gmm.covariances_ is not None
+                f.write(gmm.weights_.astype(np.float32).tobytes())
+                f.write(gmm.means_.astype(np.float32).tobytes())
+                f.write(gmm.covariances_.astype(np.float32).tobytes())
+                f.write(kmeans.cluster_centers_.astype(np.float32).tobytes())
+                f.write(transition_matrix.astype(np.float32).tobytes())
+                padding_needed = (80 * 1024) - f.tell()
+                if padding_needed > 0:
+                    f.write(b"\x00" * padding_needed)
+
+                f.write(struct.pack("fffff", min_duration, max_duration,
+                                    mean_duration, std_duration, float(num_samples)))
+                f.write(struct.pack("ii", n_clusters, n_components))
+                total_size = 100 * 1024
+                if f.tell() < total_size:
+                    f.write(b"\x00" * (total_size - f.tell()))
+            pbar.update(1)
+
+    print("✅ Master pattern generation complete!")
+    print(f"Generated patterns for {len(phoneme_dirs)} phonemes")
+    print(f"Pattern files saved to: {PATTERNS_FOLDER}")
+
+if __name__ == "__main__":
+    build_master_patterns()
