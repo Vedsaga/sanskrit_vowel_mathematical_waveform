@@ -1,0 +1,59 @@
+# =============================================
+# == Dhvani Project Master Configuration File ==
+# =============================================
+# This is the single source of truth for all scripts.
+
+# Select the profile to use for the current run: "standard", "high_detail", "ultra_detail"
+active_profile = "ultra_detail"
+
+
+# --- File Paths (shared by all profiles) ---
+[paths]
+augmented_data = "data/03_augmented/"
+pattern_output = "data/05_patterns/"
+
+
+# --- Processing Parameters (shared by all profiles) ---
+[processing]
+# Number of augmented files to use for training each phoneme.
+files_per_phoneme = 500
+
+
+# --- Audio Feature Parameters (shared by all profiles) ---
+[features]
+sample_rate = 16000
+frame_length_samples = 400 # 25ms
+hop_length_samples = 160   # 10ms
+n_fft = 512
+
+
+# =============================================
+# == Profile Definitions ==
+# =============================================
+
+[profiles.standard]
+# The default, efficient 100KB pattern
+description = "Standard 100KB Pattern"
+pattern_size_kb = 100
+n_mfcc = 13
+gmm_components = 5
+kmeans_clusters = 50
+template_length = 200
+
+[profiles.high_detail]
+# An experimental 1MB pattern for higher accuracy
+description = "High-Detail 1MB Pattern"
+pattern_size_kb = 1024                  # 1MB
+n_mfcc = 20
+gmm_components = 25
+kmeans_clusters = 150
+template_length = 1000
+
+[profiles.ultra_detail]
+# A massive 10MB pattern for maximum detail
+description = "Ultra-Detail 10MB Pattern"
+pattern_size_kb = 10240
+n_mfcc = 40
+gmm_components = 50
+kmeans_clusters = 250
+template_length = 4000
