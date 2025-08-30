@@ -3,3 +3,5 @@
 *.wav
 *flac
 download_tracker.csv
+*.tar.gz
+*.onnx
