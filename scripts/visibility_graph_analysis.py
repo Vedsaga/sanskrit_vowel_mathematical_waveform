@@ -6,12 +6,18 @@ import librosa
 import matplotlib.pyplot as plt
 from ts2vg import NaturalVG
 import networkx as nx
-from collections import Counter
 
-def analyze_visibility_graph(file_path, output_dir, duration_ms=None, show_plot=False):
-    """
-    Analyzes the visibility graph of a .wav file.
-    """
+def gini(array):
+    """Calculate the Gini coefficient of a numpy array."""
+    array = array.flatten()
+    if np.amin(array) < 0:
+        array -= np.amin(array)
+    array = np.sort(array)
+    index = np.arange(1, array.shape[0] + 1)
+    n = array.shape[0]
+    return ((np.sum((2 * index - n - 1) * array)) / (n * np.sum(array)))
+
+def analyze_visibility_graph(file_path, output_dir, duration_ms=None):
     try:
         # Load audio file
         y, sr = librosa.load(file_path, sr=None)
@@ -22,92 +28,87 @@ def analyze_visibility_graph(file_path, output_dir, duration_ms=None, show_plot=
             if len(y) > samples:
                 y = y[:samples]
         
-        # Downsample if too large for graph analysis (optional, but recommended for speed)
-        # For now, we'll keep it raw but maybe limit the max nodes if needed.
-        # If > 5000 samples, it might be slow. Let's warn or downsample.
-        if len(y) > 5000:
-            print(f"Warning: Signal length {len(y)} is large. Downsampling to ~5000 points for performance.")
-            step = len(y) // 5000
-            y = y[::step]
+        # Downsample for Adjacency Matrix visualization (keep it sharp)
+        # We need a smaller chunk to see the "Stripes" clearly.
+        # 1000 nodes is usually the sweet spot for visual patterns.
+        viz_limit = 1000 
+        y_viz = y[:viz_limit] if len(y) > viz_limit else y
 
-        # Convert to Visibility Graph
+        # 1. Build Full Graph for Stats
+        # Warning: For very long files, this can be slow/memory intensive.
+        # Maybe limit to 5000 samples for stats if not specified otherwise?
+        # For now, we trust the user's duration_ms setting.
         vg = NaturalVG()
         vg.build(y)
-        
-        # Get degree distribution directly from ts2vg for efficiency
         degrees = vg.degrees
         
-        # Calculate Metrics
+        # 2. Build Small Graph for Adjacency Matrix Visualization
+        vg_viz = NaturalVG()
+        vg_viz.build(y_viz)
+        adj_matrix = vg_viz.adjacency_matrix()
+
+        # --- METRICS ---
         avg_degree = np.mean(degrees)
         max_degree = np.max(degrees)
-        degree_variance = np.var(degrees)
+        gini_coeff = gini(degrees)  # <--- NEW GUNA METRIC
+
+        # --- PLOTTING ---
+        fig = plt.figure(figsize=(15, 5))
         
-        # Create NetworkX graph for other properties (optional, can be slow for large graphs)
-        # nx_graph = vg.as_networkx() 
+        # Plot 1: The Smoother Log-Log (CCDF)
+        ax1 = plt.subplot(1, 3, 1)
+        # Sort degrees and calculate survival function
+        sorted_degrees = np.sort(degrees)
+        y_vals = np.arange(len(sorted_degrees), 0, -1) / len(sorted_degrees)
+        ax1.loglog(sorted_degrees, y_vals, marker='.', linestyle='none', color='teal', alpha=0.5)
+        ax1.set_title(f'CCDF (Tail Analysis)\nGini: {gini_coeff:.3f}')
+        ax1.set_xlabel('Degree (log)')
+        ax1.set_ylabel('P(X >= x) (log)')
+        ax1.grid(True, which="both", ls="-", alpha=0.2)
+
+        # Plot 2: The Visual Rhythm (Adjacency Matrix)
+        ax2 = plt.subplot(1, 3, 2)
+        # We convert to dense just for plotting (spy plot)
+        # Note: In ts2vg, adjacency is usually upper triangular or symmetric.
+        # We plot the first 200x200 to see the fine detail
+        zoom = 200
         
-        # Plot Degree Distribution
-        plt.figure(figsize=(10, 6))
-        
-        # Histogram
-        plt.subplot(1, 2, 1)
-        plt.hist(degrees, bins=range(min(degrees), max(degrees) + 2), align='left', rwidth=0.8, color='skyblue', edgecolor='black')
-        plt.title('Degree Distribution')
-        plt.xlabel('Degree')
-        plt.ylabel('Frequency')
-        
-        # Log-Log Plot
-        degree_counts = Counter(degrees)
-        deg, count = zip(*sorted(degree_counts.items()))
-        
-        plt.subplot(1, 2, 2)
-        plt.loglog(deg, count, 'o', markersize=5, color='orange')
-        plt.title('Log-Log Degree Distribution')
-        plt.xlabel('Degree (log)')
-        plt.ylabel('Frequency (log)')
+        # Handle sparse matrix conversion safely
+        if hasattr(adj_matrix, 'todense'):
+            dense_matrix = adj_matrix.todense()
+        else:
+            dense_matrix = adj_matrix
+            
+        if dense_matrix.shape[0] > zoom:
+            dense_matrix = dense_matrix[:zoom, :zoom]
+            
+        ax2.imshow(dense_matrix, cmap='binary', interpolation='nearest', aspect='auto')
+        ax2.set_title(f'Adjacency Texture (First {zoom} nodes)')
+        ax2.set_xlabel('Time (t)')
+        ax2.set_ylabel('Time (t)')
+
+        # Plot 3: Standard Degree Dist (Your original, for reference)
+        ax3 = plt.subplot(1, 3, 3)
+        ax3.hist(degrees, bins=50, color='skyblue', edgecolor='black', log=True)
+        ax3.set_title(f'Degree Histogram\nMax Deg: {max_degree}')
         
         plt.tight_layout()
-        
-        # Save Plot
-        # Extract phoneme (parent directory name)
+
+        # Save
         phoneme = os.path.basename(os.path.dirname(file_path))
         phoneme_dir = os.path.join(output_dir, phoneme)
         os.makedirs(phoneme_dir, exist_ok=True)
-        
-        filename = os.path.basename(file_path).replace('.wav', '_vg_degree_dist.png')
+        filename = os.path.basename(file_path).replace('.wav', '_vg_enhanced.png')
         output_path = os.path.join(phoneme_dir, filename)
         plt.savefig(output_path)
         plt.close()
-        
-        # Determine Network Type (Heuristic)
-        # Random (Poisson) vs Scale-Free (Power Law) vs Periodic (Regular)
-        # This is a simplification.
-        
-        # Check for Hubs (High max degree relative to average)
-        hub_ratio = max_degree / avg_degree
-        
-        network_type = "Unknown"
-        if degree_variance < 1.0: # Very uniform
-            network_type = "Periodic/Regular"
-        elif hub_ratio > 5.0: # Significant hubs
-            network_type = "Scale-Free (Chaos)"
-        else:
-            network_type = "Random (Noise)"
 
-        print(f"Processed: {file_path}")
-        print(f"  Nodes: {len(y)}")
-        print(f"  Avg Degree: {avg_degree:.2f}")
-        print(f"  Max Degree: {max_degree}")
-        print(f"  Hub Ratio: {hub_ratio:.2f}")
-        print(f"  Type: {network_type}")
-        print(f"  Saved plot to: {output_path}")
-        
+        print(f"Processed {os.path.basename(file_path)} | Gini: {gini_coeff:.3f} | Saved.")
         return {
             'file': os.path.basename(file_path),
-            'nodes': len(y),
+            'gini': gini_coeff,
             'avg_degree': avg_degree,
-            'max_degree': max_degree,
-            'variance': degree_variance,
-            'type': network_type
+            'max_degree': max_degree
         }
 
     except Exception as e:
@@ -115,7 +116,7 @@ def analyze_visibility_graph(file_path, output_dir, duration_ms=None, show_plot=
         return None
 
 def main():
-    parser = argparse.ArgumentParser(description='Visibility Graph Analysis of WAV files')
+    parser = argparse.ArgumentParser(description='Visibility Graph Analysis of WAV files (Enhanced)')
     parser.add_argument('--input_dir', type=str, default='data/02_cleaned', help='Input directory containing cleaned .wav files')
     parser.add_argument('--output_dir', type=str, default='results/vg_plots', help='Output directory for plots')
     parser.add_argument('--limit', type=int, default=None, help='Limit the number of files to process')
@@ -145,7 +146,7 @@ def main():
     # Summary
     print("\n--- Summary ---")
     for r in results:
-        print(f"{r['file']}: {r['type']} (Avg Deg: {r['avg_degree']:.2f})")
+        print(f"{r['file']}: Gini={r['gini']:.3f}, AvgDeg={r['avg_degree']:.2f}")
 
 if __name__ == "__main__":
     main()
