@@ -105,8 +105,12 @@ def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False
             spine.set_edgecolor('#EAEAEA')
         
         # Save plot
+        # vowel is already extracted above
+        phoneme_dir = os.path.join(output_dir, vowel)
+        os.makedirs(phoneme_dir, exist_ok=True)
+        
         filename = os.path.basename(file_path).replace('.wav', '_phase_space.png')
-        output_path = os.path.join(output_dir, filename)
+        output_path = os.path.join(phoneme_dir, filename)
         plt.savefig(output_path, dpi=300, facecolor='#111111')
         plt.close()
         
