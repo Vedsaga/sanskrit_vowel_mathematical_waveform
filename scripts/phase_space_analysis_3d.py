@@ -72,6 +72,27 @@ def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False
             name='Trajectory'
         )])
         
+        # Add Start and End markers
+        fig.add_trace(go.Scatter3d(
+            x=[x_val[0]], y=[y_val[0]], z=[z_val[0]],
+            mode='markers+text',
+            marker=dict(size=5, color='#00FF00'), # Green
+            text=['Start'],
+            textposition='top center',
+            textfont=dict(color='#EAEAEA'),
+            name='Start'
+        ))
+        
+        fig.add_trace(go.Scatter3d(
+            x=[x_val[-1]], y=[y_val[-1]], z=[z_val[-1]],
+            mode='markers+text',
+            marker=dict(size=5, color='#FF0000'), # Red
+            text=['End'],
+            textposition='top center',
+            textfont=dict(color='#EAEAEA'),
+            name='End'
+        ))
+        
         # Extract vowel from parent directory name for title
         vowel = os.path.basename(os.path.dirname(file_path))
         
