@@ -5,4 +5,4 @@
 download_tracker.csv
 *.tar.gz
 *.onnx
-results/phase_space_plots
+results/*

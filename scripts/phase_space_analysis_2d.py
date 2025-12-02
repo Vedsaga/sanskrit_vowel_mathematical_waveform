@@ -8,33 +8,27 @@ import nolds
 from sklearn.preprocessing import MinMaxScaler
 import argparse
 
-def analyze_phase_space(file_path, output_dir, show_plot=False):
+def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False):
     """
-    Analyzes the phase space of a .wav file.
+    Analyzes the phase space of a .wav file using 2D reconstruction and Matplotlib.
     """
     try:
         # Load audio file
         y, sr = librosa.load(file_path, sr=None)
+        
+        # Slice to specific duration if requested
+        if duration_ms is not None:
+            samples = int(sr * duration_ms / 1000)
+            if len(y) > samples:
+                y = y[:samples]
         
         # Normalize signal
         scaler = MinMaxScaler(feature_range=(-1, 1))
         y_norm = scaler.fit_transform(y.reshape(-1, 1)).flatten()
 
         # Phase Space Reconstruction
-        # We need to choose an embedding dimension (m) and time delay (tau)
-        # For visualization, we often use m=2 or m=3.
-        # nolds has a function to estimate these, but it can be slow.
-        # For this initial pass, let's use standard heuristics or fixed values for visualization.
-        
-        # Heuristic for tau: first zero crossing of autocorrelation or first minimum of mutual information
-        # For simplicity and speed in this trial, let's try a fixed small lag or a simple autocorrelation check.
-        # librosa.autocorrelate can help.
-        
-        # Let's use a fixed tau for visualization consistency across vowels for now, 
-        # or calculate it per file. Let's calculate it per file using autocorrelation.
+        # Calculate tau using autocorrelation
         ac = librosa.autocorrelate(y_norm, max_size=2000)
-        # Find the first local minimum or zero crossing. 
-        # A common heuristic is the first zero crossing.
         zero_crossings = np.where(np.diff(np.sign(ac)))[0]
         if len(zero_crossings) > 0:
             tau = zero_crossings[0]
@@ -44,10 +38,6 @@ def analyze_phase_space(file_path, output_dir, show_plot=False):
         m = 2 # For 2D plot
         
         # Create time-delay embedding
-        # X(t) = [y(t), y(t + tau), ..., y(t + (m-1)*tau)]
-        # We can use nolds.delay_embedding or just numpy
-        
-        # Let's use m=2 for a 2D Phase Portrait
         y_delay = np.roll(y_norm, -tau)
         
         # Trim the end
@@ -55,7 +45,9 @@ def analyze_phase_space(file_path, output_dir, show_plot=False):
         y_delay_trimmed = y_delay[:-tau]
         
         # Plot
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(10, 8), facecolor='#111111')
+        ax = plt.gca()
+        ax.set_facecolor('#111111')
         
         # Explicitly set global font to ensure Latin characters render correctly
         plt.rcParams['font.family'] = 'sans-serif'
@@ -74,16 +66,20 @@ def analyze_phase_space(file_path, output_dir, show_plot=False):
         lc.set_linewidth(0.5)
         lc.set_alpha(0.7)
         
-        ax = plt.gca()
         ax.add_collection(lc)
         ax.autoscale()
         
         # Add colorbar
         cbar = plt.colorbar(lc, ax=ax)
-        cbar.set_label('Time (samples)')
+        cbar.set_label('Time (samples)', color='#EAEAEA')
+        cbar.ax.yaxis.set_tick_params(color='#EAEAEA')
+        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='#EAEAEA')
         
         # Title in default font (for Latin characters)
-        plt.title(f'Phase Space Reconstruction: {os.path.basename(file_path)}\n(tau={tau}, m={m})')
+        title_text = f'Phase Space Reconstruction: {os.path.basename(file_path)}\n(tau={tau}, m={m})'
+        if duration_ms:
+            title_text += f'\nFirst {duration_ms}ms'
+        plt.title(title_text, color='#EAEAEA')
         
         # Add Devanagari Vowel as a separate annotation
         # Extract vowel from parent directory name
@@ -92,17 +88,26 @@ def analyze_phase_space(file_path, output_dir, show_plot=False):
         
         # Place it in the corner or somewhere visible
         plt.text(0.05, 0.95, f"{vowel}", transform=ax.transAxes, 
-                 fontproperties=font_prop, verticalalignment='top', 
-                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                 fontproperties=font_prop, verticalalignment='top', color='#EAEAEA',
+                 bbox=dict(boxstyle='round', facecolor='#111111', edgecolor='#EAEAEA', alpha=0.8))
         
-        plt.xlabel('y(t)')
-        plt.ylabel(f'y(t + {tau})')
-        plt.grid(True, alpha=0.3)
+        plt.xlabel('y(t)', color='#EAEAEA')
+        plt.ylabel(f'y(t + {tau})', color='#EAEAEA')
+        
+        ax.tick_params(axis='x', colors='#EAEAEA')
+        ax.tick_params(axis='y', colors='#EAEAEA')
+        
+        # Dark grid
+        plt.grid(True, alpha=0.2, color='#EAEAEA')
+        
+        # Remove spines or color them
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#EAEAEA')
         
         # Save plot
         filename = os.path.basename(file_path).replace('.wav', '_phase_space.png')
         output_path = os.path.join(output_dir, filename)
-        plt.savefig(output_path, dpi=300)
+        plt.savefig(output_path, dpi=300, facecolor='#111111')
         plt.close()
         
         print(f"Processed: {file_path} -> {output_path}")
@@ -113,10 +118,11 @@ def analyze_phase_space(file_path, output_dir, show_plot=False):
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description='Phase Space Analysis of WAV files')
+    parser = argparse.ArgumentParser(description='Phase Space Analysis of WAV files (2D)')
     parser.add_argument('--input_dir', type=str, default='data/02_cleaned', help='Input directory containing cleaned .wav files')
-    parser.add_argument('--output_dir', type=str, default='results/phase_space_plots', help='Output directory for plots')
+    parser.add_argument('--output_dir', type=str, default='results/phase_space_plots_2d', help='Output directory for plots')
     parser.add_argument('--limit', type=int, default=None, help='Limit the number of files to process (for trial runs)')
+    parser.add_argument('--duration_ms', type=int, default=None, help='Duration in milliseconds to analyze (from start)')
     
     args = parser.parse_args()
     
@@ -135,7 +141,7 @@ def main():
         
     count = 0
     for wav_file in wav_files:
-        if analyze_phase_space(wav_file, args.output_dir):
+        if analyze_phase_space(wav_file, args.output_dir, duration_ms=args.duration_ms):
             count += 1
             
     print(f"Completed analysis. Processed {count} files.")
