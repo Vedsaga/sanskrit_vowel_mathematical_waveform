@@ -17,7 +17,7 @@ def gini(array):
     n = array.shape[0]
     return ((np.sum((2 * index - n - 1) * array)) / (n * np.sum(array)))
 
-def analyze_visibility_graph(file_path, output_dir, duration_ms=None):
+def analyze_visibility_graph(file_path, output_dir, duration_ms=None, use_phoneme_subdir=True):
     try:
         # Load audio file
         y, sr = librosa.load(file_path, sr=None)
@@ -95,11 +95,17 @@ def analyze_visibility_graph(file_path, output_dir, duration_ms=None):
         plt.tight_layout()
 
         # Save
-        phoneme = os.path.basename(os.path.dirname(file_path))
-        phoneme_dir = os.path.join(output_dir, phoneme)
-        os.makedirs(phoneme_dir, exist_ok=True)
+        if use_phoneme_subdir:
+            phoneme = os.path.basename(os.path.dirname(file_path))
+            phoneme_dir = os.path.join(output_dir, phoneme)
+            os.makedirs(phoneme_dir, exist_ok=True)
+            save_dir = phoneme_dir
+        else:
+            save_dir = output_dir
+            os.makedirs(save_dir, exist_ok=True)
+            
         filename = os.path.basename(file_path).replace('.wav', '_vg_enhanced.png')
-        output_path = os.path.join(phoneme_dir, filename)
+        output_path = os.path.join(save_dir, filename)
         plt.savefig(output_path)
         plt.close()
 
@@ -108,7 +114,8 @@ def analyze_visibility_graph(file_path, output_dir, duration_ms=None):
             'file': os.path.basename(file_path),
             'gini': gini_coeff,
             'avg_degree': avg_degree,
-            'max_degree': max_degree
+            'max_degree': max_degree,
+            'output_path': output_path
         }
 
     except Exception as e:

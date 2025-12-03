@@ -72,7 +72,7 @@ def correlation_dimension(points, k_neighbors=None):
     slope, _ = np.polyfit(log_r, log_c, 1)
     return slope
 
-def analyze_poincare(file_path, output_dir, duration_ms=None):
+def analyze_poincare(file_path, output_dir, duration_ms=None, use_phoneme_subdir=True):
     try:
         # Load audio file
         y, sr = librosa.load(file_path, sr=None)
@@ -120,7 +120,7 @@ def analyze_poincare(file_path, output_dir, duration_ms=None):
         # Plot
         plt.figure(figsize=(8, 8), facecolor='#111111')
         ax = plt.gca()
-        ax.set_facecolor('#111111')
+        ax.set_facecolor='#111111'
         
         if len(points_2d) > 0:
             plt.scatter(points_2d[:, 0], points_2d[:, 1], s=10, c='cyan', alpha=0.7, edgecolors='none')
@@ -137,12 +137,17 @@ def analyze_poincare(file_path, output_dir, duration_ms=None):
         plt.grid(True, alpha=0.2, color='#EAEAEA')
         
         # Save
-        phoneme = os.path.basename(os.path.dirname(file_path))
-        phoneme_dir = os.path.join(output_dir, phoneme)
-        os.makedirs(phoneme_dir, exist_ok=True)
+        if use_phoneme_subdir:
+            phoneme = os.path.basename(os.path.dirname(file_path))
+            phoneme_dir = os.path.join(output_dir, phoneme)
+            os.makedirs(phoneme_dir, exist_ok=True)
+            save_dir = phoneme_dir
+        else:
+            save_dir = output_dir
+            os.makedirs(save_dir, exist_ok=True)
         
         filename = os.path.basename(file_path).replace('.wav', '_poincare.png')
-        output_path = os.path.join(phoneme_dir, filename)
+        output_path = os.path.join(save_dir, filename)
         plt.savefig(output_path, dpi=300, facecolor='#111111')
         plt.close()
         
@@ -150,7 +155,8 @@ def analyze_poincare(file_path, output_dir, duration_ms=None):
         return {
             'file': os.path.basename(file_path),
             'fractal_dim': fractal_dim,
-            'points': len(points_2d)
+            'points': len(points_2d),
+            'output_path': output_path
         }
 
     except Exception as e:

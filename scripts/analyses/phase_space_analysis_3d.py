@@ -10,7 +10,7 @@ import argparse
 
 import plotly.graph_objects as go
 
-def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False):
+def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False, use_phoneme_subdir=True):
     """
     Analyzes the phase space of a .wav file using 3D reconstruction and Plotly.
     """
@@ -135,20 +135,24 @@ def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False
         )
         
         # Save plot as HTML
-        # vowel is already extracted above
-        phoneme_dir = os.path.join(output_dir, vowel)
-        os.makedirs(phoneme_dir, exist_ok=True)
+        if use_phoneme_subdir:
+            phoneme_dir = os.path.join(output_dir, vowel)
+            os.makedirs(phoneme_dir, exist_ok=True)
+            save_dir = phoneme_dir
+        else:
+            save_dir = output_dir
+            os.makedirs(save_dir, exist_ok=True)
         
         filename = os.path.basename(file_path).replace('.wav', '_phase_space.html')
-        output_path = os.path.join(phoneme_dir, filename)
+        output_path = os.path.join(save_dir, filename)
         fig.write_html(output_path)
         
         print(f"Processed: {file_path} -> {output_path}")
-        return True
+        return output_path
 
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
-        return False
+        return None
 
 def main():
     parser = argparse.ArgumentParser(description='Phase Space Analysis of WAV files')

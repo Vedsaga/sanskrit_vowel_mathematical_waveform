@@ -8,7 +8,7 @@ from ripser import ripser
 from persim import plot_diagrams
 from sklearn.preprocessing import MinMaxScaler
 
-def analyze_tda_barcode(file_path, output_dir, duration_ms=None, max_points=800):
+def analyze_tda_barcode(file_path, output_dir, duration_ms=None, max_points=800, use_phoneme_subdir=True):
     """
     Analyzes the persistent homology of a .wav file (Barcode/Diagram).
     """
@@ -96,22 +96,26 @@ def analyze_tda_barcode(file_path, output_dir, duration_ms=None, max_points=800)
         plt.tight_layout()
         
         # Save Plot
-        # Extract phoneme (parent directory name)
-        phoneme = os.path.basename(os.path.dirname(file_path))
-        phoneme_dir = os.path.join(output_dir, phoneme)
-        os.makedirs(phoneme_dir, exist_ok=True)
+        if use_phoneme_subdir:
+            phoneme = os.path.basename(os.path.dirname(file_path))
+            phoneme_dir = os.path.join(output_dir, phoneme)
+            os.makedirs(phoneme_dir, exist_ok=True)
+            save_dir = phoneme_dir
+        else:
+            save_dir = output_dir
+            os.makedirs(save_dir, exist_ok=True)
         
         filename = os.path.basename(file_path).replace('.wav', '_tda_barcode.png')
-        output_path = os.path.join(phoneme_dir, filename)
+        output_path = os.path.join(save_dir, filename)
         plt.savefig(output_path)
         plt.close()
         
         print(f"Processed: {file_path} -> {output_path}")
-        return True
+        return output_path
 
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
-        return False
+        return None
 
 def main():
     parser = argparse.ArgumentParser(description='TDA Barcode Analysis of WAV files')

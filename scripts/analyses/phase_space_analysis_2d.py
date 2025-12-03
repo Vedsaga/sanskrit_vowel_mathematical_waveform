@@ -8,7 +8,7 @@ import nolds
 from sklearn.preprocessing import MinMaxScaler
 import argparse
 
-def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False):
+def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False, use_phoneme_subdir=True):
     """
     Analyzes the phase space of a .wav file using 2D reconstruction and Matplotlib.
     """
@@ -47,7 +47,7 @@ def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False
         # Plot
         plt.figure(figsize=(10, 8), facecolor='#111111')
         ax = plt.gca()
-        ax.set_facecolor('#111111')
+        ax.set_facecolor='#111111'
         
         # Explicitly set global font to ensure Latin characters render correctly
         plt.rcParams['font.family'] = 'sans-serif'
@@ -105,21 +105,25 @@ def analyze_phase_space(file_path, output_dir, duration_ms=None, show_plot=False
             spine.set_edgecolor('#EAEAEA')
         
         # Save plot
-        # vowel is already extracted above
-        phoneme_dir = os.path.join(output_dir, vowel)
-        os.makedirs(phoneme_dir, exist_ok=True)
+        if use_phoneme_subdir:
+            phoneme_dir = os.path.join(output_dir, vowel)
+            os.makedirs(phoneme_dir, exist_ok=True)
+            save_dir = phoneme_dir
+        else:
+            save_dir = output_dir
+            os.makedirs(save_dir, exist_ok=True)
         
         filename = os.path.basename(file_path).replace('.wav', '_phase_space.png')
-        output_path = os.path.join(phoneme_dir, filename)
+        output_path = os.path.join(save_dir, filename)
         plt.savefig(output_path, dpi=300, facecolor='#111111')
         plt.close()
         
         print(f"Processed: {file_path} -> {output_path}")
-        return True
+        return output_path
 
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
-        return False
+        return None
 
 def main():
     parser = argparse.ArgumentParser(description='Phase Space Analysis of WAV files (2D)')

@@ -6,7 +6,7 @@ import librosa
 import matplotlib.pyplot as plt
 from pyts.image import GramianAngularField
 
-def analyze_gaf(file_path, output_dir, duration_ms=None):
+def analyze_gaf(file_path, output_dir, duration_ms=None, use_phoneme_subdir=True):
     try:
         # Load audio file
         y, sr = librosa.load(file_path, sr=None)
@@ -69,20 +69,25 @@ def analyze_gaf(file_path, output_dir, duration_ms=None):
                      bbox=dict(facecolor='#111111', edgecolor='#EAEAEA', alpha=0.7))
 
         # Save
-        phoneme_dir = os.path.join(output_dir, phoneme)
-        os.makedirs(phoneme_dir, exist_ok=True)
+        if use_phoneme_subdir:
+            phoneme_dir = os.path.join(output_dir, phoneme)
+            os.makedirs(phoneme_dir, exist_ok=True)
+            save_dir = phoneme_dir
+        else:
+            save_dir = output_dir
+            os.makedirs(save_dir, exist_ok=True)
         
         filename = os.path.basename(file_path).replace('.wav', '_gaf.png')
-        output_path = os.path.join(phoneme_dir, filename)
+        output_path = os.path.join(save_dir, filename)
         plt.savefig(output_path, dpi=300, facecolor='#111111', bbox_inches='tight')
         plt.close()
         
         print(f"Processed: {file_path} -> {output_path}")
-        return True
+        return output_path
 
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
-        return False
+        return None
 
 def main():
     parser = argparse.ArgumentParser(description='Gramian Angular Field (GAF) Analysis')
