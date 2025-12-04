@@ -6,3 +6,4 @@ download_tracker.csv
 *.tar.gz
 *.onnx
 results/*
+data/01_raw/labels_padded/*
