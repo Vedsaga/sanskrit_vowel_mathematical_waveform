@@ -1,0 +1,219 @@
+# Implementation Plan
+
+- [x] 1. Set up project foundation and routing structure
+  - [x] 1.1 Install and configure shadcn-svelte with Tailwind CSS v4
+    - Run `npx shadcn-svelte@next init` to set up shadcn-svelte
+    - Configure components.json for the project
+    - Install required dependencies (bits-ui, tailwind-variants, clsx, tailwind-merge)
+    - _Requirements: 6.5_
+  - [x] 1.2 Configure Project Vak theme tokens in app.css
+    - Add CSS custom properties for light/dark mode colors
+    - Configure Inter font from Google Fonts
+    - Add noise texture overlay CSS
+    - Set up glassmorphism utility classes
+    - _Requirements: 6.5_
+  - [x] 1.3 Create root layout with sidebar navigation
+    - Create `+layout.svelte` with sidebar component
+    - Add navigation links for all feature pages (Home, Visualizer, Audio Analysis, Comparison)
+    - Implement dark mode toggle
+    - _Requirements: 1.1, 1.4, 1.5_
+  - [x] 1.4 Create route structure for all feature pages
+    - Create `/visualizer/+page.svelte` placeholder
+    - Create `/audio-analysis/+page.svelte` placeholder
+    - Create `/comparison/+page.svelte` placeholder
+    - Update home page with feature overview
+    - _Requirements: 1.2, 1.3_
+
+- [-] 2. Implement core shape engine
+  - [-] 2.1 Create shapeEngine.ts with shape generation functions
+    - Implement `generateShapePoints(fq, R, A, phi, resolution)` using formula r(θ) = R + A·sin((fq-1)·θ + φ)
+    - Implement `validateShapeParams()` for input validation
+    - Implement `countWiggles()` helper to verify wiggle count
+    - _Requirements: 2.1, 2.2, 2.3_
+  - [ ]* 2.2 Write property test for Shape Formula Correctness
+    - **Property 1: Shape Formula Correctness**
+    - **Validates: Requirements 2.1, 2.2, 2.3**
+  - [ ] 2.3 Create Shape and ShapeConfig TypeScript interfaces
+    - Define Shape interface (id, fq, R, phi, color, opacity, strokeWidth, selected)
+    - Define ShapeConfig interface (A, resolution, canvasSize)
+    - Define RotationState interface
+    - _Requirements: 2.1, 2.3_
+  - [ ]* 2.4 Write property test for Input Validation Rejection
+    - **Property 3: Input Validation Rejection**
+    - **Validates: Requirements 2.5**
+
+- [ ] 3. Implement shape store and state management
+  - [ ] 3.1 Create shapeStore.ts with Svelte 5 runes
+    - Implement shapes array state with $state rune
+    - Implement config state with global A (wiggle amplitude)
+    - Implement selectedIds Set for multi-selection
+    - Implement rotation state
+    - _Requirements: 3.1, 3.2_
+  - [ ] 3.2 Implement shape CRUD operations
+    - Implement `addShape(fq)` action
+    - Implement `removeShape(id)` action
+    - Implement `selectShape(id, multi?)` action
+    - Implement `updateShapeProperty(id, property)` action
+    - _Requirements: 3.1, 3.7_
+  - [ ]* 3.3 Write property test for Shape Collection Integrity (Add)
+    - **Property 6: Shape Collection Integrity (Add)**
+    - **Validates: Requirements 3.1**
+  - [ ]* 3.4 Write property test for Shape Collection Integrity (Remove)
+    - **Property 7: Shape Collection Integrity (Remove)**
+    - **Validates: Requirements 3.7**
+
+- [ ] 4. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 5. Implement ShapeCanvas component
+  - [ ] 5.1 Create ShapeCanvas.svelte with HTML Canvas
+    - Set up canvas with proper sizing and DPI handling
+    - Implement `renderShape()` function for drawing shapes
+    - Apply Project Vak theme (card background, noise overlay)
+    - Center shapes at canvas origin
+    - _Requirements: 2.6, 6.3_
+  - [ ] 5.2 Implement multi-shape rendering with overlay
+    - Render all shapes from store with independent colors/opacity
+    - Highlight selected shapes with brand color (#df728b)
+    - Implement z-ordering for overlapping shapes
+    - _Requirements: 3.1, 3.2, 3.8_
+
+- [ ] 6. Implement rotation animation system
+  - [ ] 6.1 Create animationLoop.ts for rotation control
+    - Implement requestAnimationFrame-based animation loop
+    - Implement `startRotation(direction, mode, targetAngle?)` function
+    - Implement `stopRotation()` function
+    - Handle clockwise (decrease phi) and counter-clockwise (increase phi)
+    - _Requirements: 3.3, 3.4, 3.5_
+  - [ ] 6.2 Implement fixed rotation mode
+    - Calculate target phi from degrees to radians
+    - Stop animation when target angle reached
+    - _Requirements: 3.6_
+  - [ ]* 6.3 Write property test for Rotation Direction Consistency
+    - **Property 4: Rotation Direction Consistency**
+    - **Validates: Requirements 3.3, 3.4**
+  - [ ]* 6.4 Write property test for Fixed Rotation Accuracy
+    - **Property 5: Fixed Rotation Accuracy**
+    - **Validates: Requirements 3.6**
+
+- [ ] 7. Build Visualizer page UI components
+  - [ ] 7.1 Install required shadcn-svelte components
+    - Install Button, Input, Slider, Select, Toggle Group, Card, Checkbox components
+    - Configure component variants for Project Vak theme
+    - _Requirements: 6.5_
+  - [ ] 7.2 Create ShapeControls.svelte component
+    - Add frequency input with validation (shadcn Input)
+    - Add "Add Shape" button (shadcn Button)
+    - Add global amplitude slider (shadcn Slider)
+    - Display validation errors below input
+    - _Requirements: 2.4, 2.5, 6.4_
+  - [ ] 7.3 Create ShapeList.svelte component
+    - Display list of shapes with frequency and color
+    - Add checkbox for multi-selection (shadcn Checkbox)
+    - Add color picker for each shape
+    - Add delete button for each shape (shadcn Button)
+    - _Requirements: 3.2, 3.7, 3.8_
+  - [ ] 7.4 Create RotationControls.svelte component
+    - Add direction toggle (clockwise/counter-clockwise) using shadcn Toggle Group
+    - Add mode select (loop/fixed) using shadcn Select
+    - Add speed slider (shadcn Slider)
+    - Add angle input for fixed mode (shadcn Input)
+    - Add start/stop button
+    - _Requirements: 3.3, 3.4, 3.5, 3.6, 3.9_
+  - [ ] 7.5 Assemble Visualizer page
+    - Integrate ShapeCanvas, ShapeControls, ShapeList, RotationControls
+    - Apply responsive grid layout
+    - Ensure layout stability (no shifting)
+    - _Requirements: 6.3_
+
+- [ ] 8. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 9. Implement FFT audio processing
+  - [ ] 9.1 Create fftProcessor.ts with Web Audio API
+    - Implement `computeFFT(audioBuffer, fftSize)` using AnalyserNode
+    - Return FFTResult with frequencies and magnitudes arrays
+    - _Requirements: 4.2_
+  - [ ] 9.2 Implement frequency-to-fq mapping
+    - Implement `mapFrequencyToFq(frequencyHz, strategy, options)` function
+    - Support linear and logarithmic normalization strategies
+    - Ensure deterministic mapping (same input → same output)
+    - _Requirements: 4.4_
+  - [ ] 9.3 Implement frequency component extraction
+    - Implement `extractTopFrequencies(fftResult, count)` function
+    - Sort by magnitude and return top N components
+    - Map each component to integer fq value
+    - _Requirements: 4.3_
+  - [ ]* 9.4 Write property test for FFT Frequency-to-Shape Mapping
+    - **Property 8: FFT Frequency-to-Shape Mapping**
+    - **Validates: Requirements 4.4**
+  - [ ]* 9.5 Write property test for Structural Invariance
+    - **Property 2: Structural Invariance**
+    - **Validates: Requirements 2.7, 2.8, 2.9, 4.8**
+
+- [ ] 10. Build Audio Analysis page
+  - [ ] 10.1 Create AudioUploader.svelte component
+    - Implement drag-and-drop zone for audio files
+    - Validate file format (WAV, MP3, OGG)
+    - Display loading state during file processing
+    - Display error state for unsupported formats
+    - _Requirements: 4.1, 4.6, 4.7, 6.1, 6.2_
+  - [ ] 10.2 Create audioStore.ts for audio state management
+    - Manage audioBuffer, fileName, isProcessing, error states
+    - Store FFT results and frequency components
+    - Store normalization strategy and fq range settings
+    - _Requirements: 4.2, 4.3_
+  - [ ] 10.3 Create FFTDisplay.svelte component
+    - Display list of frequency components with Hz and amplitude
+    - Add checkboxes for selecting components
+    - Add "Generate Shapes" button
+    - Optionally map amplitude to visual properties (opacity, color)
+    - _Requirements: 4.3, 4.4, 4.8_
+  - [ ] 10.4 Assemble Audio Analysis page
+    - Integrate AudioUploader, FFTDisplay, ShapeCanvas
+    - Connect FFT selection to shape generation
+    - Enable all manipulation operations from Requirement 3
+    - _Requirements: 4.5_
+
+- [ ] 11. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 12. Build Comparison page
+  - [ ] 12.1 Create comparisonStore.ts for dual-panel state
+    - Manage left and right panel AudioStoreState independently
+    - Implement sync mode toggle (independent/synchronized)
+    - Calculate shared frequency scale from both panels
+    - _Requirements: 5.1, 5.2, 5.3_
+  - [ ] 12.2 Create ComparisonPanel.svelte component
+    - Reuse AudioUploader, FFTDisplay, ShapeCanvas components
+    - Connect to appropriate panel state (left/right)
+    - _Requirements: 5.2_
+  - [ ] 12.3 Create SyncControls.svelte component
+    - Add toggle for sync mode
+    - Display shared frequency scale range
+    - _Requirements: 5.3, 5.4_
+  - [ ] 12.4 Assemble Comparison page
+    - Display two ComparisonPanel components side by side
+    - Integrate SyncControls
+    - Ensure consistent layout dimensions for both panels
+    - _Requirements: 5.1, 5.4, 5.5_
+  - [ ]* 12.5 Write property test for Comparison Panel Independence
+    - **Property 9: Comparison Panel Independence**
+    - **Validates: Requirements 5.2, 5.4**
+
+- [ ] 13. Final polish and integration
+  - [ ] 13.1 Add loading states and skeletons
+    - Add Skeleton component for canvas loading
+    - Add Spinner for FFT processing
+    - _Requirements: 6.1_
+  - [ ] 13.2 Add error states with retry options
+    - Implement error boundary for components
+    - Add retry buttons for failed operations
+    - _Requirements: 6.2_
+  - [ ] 13.3 Ensure disabled states for unavailable actions
+    - Disable rotation controls when no shapes selected
+    - Disable "Generate Shapes" when no frequencies selected
+    - _Requirements: 6.4_
+
+- [ ] 14. Final Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
