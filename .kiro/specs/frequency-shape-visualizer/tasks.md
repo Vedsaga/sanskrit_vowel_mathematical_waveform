@@ -215,5 +215,5 @@
     - Disable "Generate Shapes" when no frequencies selected
     - _Requirements: 6.4_
 
-- [ ] 14. Final Checkpoint - Ensure all tests pass
+- [x] 14. Final Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
