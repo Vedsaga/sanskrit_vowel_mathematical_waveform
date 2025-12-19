@@ -24,8 +24,8 @@
     - Update home page with feature overview
     - _Requirements: 1.2, 1.3_
 
-- [-] 2. Implement core shape engine
-  - [-] 2.1 Create shapeEngine.ts with shape generation functions
+- [x] 2. Implement core shape engine
+  - [x] 2.1 Create shapeEngine.ts with shape generation functions
     - Implement `generateShapePoints(fq, R, A, phi, resolution)` using formula r(θ) = R + A·sin((fq-1)·θ + φ)
     - Implement `validateShapeParams()` for input validation
     - Implement `countWiggles()` helper to verify wiggle count
@@ -33,7 +33,7 @@
   - [ ]* 2.2 Write property test for Shape Formula Correctness
     - **Property 1: Shape Formula Correctness**
     - **Validates: Requirements 2.1, 2.2, 2.3**
-  - [ ] 2.3 Create Shape and ShapeConfig TypeScript interfaces
+  - [x] 2.3 Create Shape and ShapeConfig TypeScript interfaces
     - Define Shape interface (id, fq, R, phi, color, opacity, strokeWidth, selected)
     - Define ShapeConfig interface (A, resolution, canvasSize)
     - Define RotationState interface
@@ -42,14 +42,14 @@
     - **Property 3: Input Validation Rejection**
     - **Validates: Requirements 2.5**
 
-- [ ] 3. Implement shape store and state management
-  - [ ] 3.1 Create shapeStore.ts with Svelte 5 runes
+- [-] 3. Implement shape store and state management
+  - [x] 3.1 Create shapeStore.ts with Svelte 5 runes
     - Implement shapes array state with $state rune
     - Implement config state with global A (wiggle amplitude)
     - Implement selectedIds Set for multi-selection
     - Implement rotation state
     - _Requirements: 3.1, 3.2_
-  - [ ] 3.2 Implement shape CRUD operations
+  - [-] 3.2 Implement shape CRUD operations
     - Implement `addShape(fq)` action
     - Implement `removeShape(id)` action
     - Implement `selectShape(id, multi?)` action

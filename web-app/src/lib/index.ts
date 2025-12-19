@@ -9,6 +9,9 @@ export {
   validateFrequencyInput
 } from "./shapeEngine.js";
 
+// Store exports
+export { shapeStore, type ShapeStore } from "./stores/index.js";
+
 // Type exports
 export type {
   Point,
