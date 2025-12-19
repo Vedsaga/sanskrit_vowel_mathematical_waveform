@@ -96,37 +96,37 @@
     - **Property 5: Fixed Rotation Accuracy**
     - **Validates: Requirements 3.6**
 
-- [-] 7. Build Visualizer page UI components
-  - [-] 7.1 Install required shadcn-svelte components
+- [x] 7. Build Visualizer page UI components
+  - [x] 7.1 Install required shadcn-svelte components
     - Install Button, Input, Slider, Select, Toggle Group, Card, Checkbox components
     - Configure component variants for Project Vak theme
     - _Requirements: 6.5_
-  - [ ] 7.2 Create ShapeControls.svelte component
+  - [x] 7.2 Create ShapeControls.svelte component
     - Add frequency input with validation (shadcn Input)
     - Add "Add Shape" button (shadcn Button)
     - Add global amplitude slider (shadcn Slider)
     - Display validation errors below input
     - _Requirements: 2.4, 2.5, 6.4_
-  - [ ] 7.3 Create ShapeList.svelte component
+  - [x] 7.3 Create ShapeList.svelte component
     - Display list of shapes with frequency and color
     - Add checkbox for multi-selection (shadcn Checkbox)
     - Add color picker for each shape
     - Add delete button for each shape (shadcn Button)
     - _Requirements: 3.2, 3.7, 3.8_
-  - [ ] 7.4 Create RotationControls.svelte component
+  - [x] 7.4 Create RotationControls.svelte component
     - Add direction toggle (clockwise/counter-clockwise) using shadcn Toggle Group
     - Add mode select (loop/fixed) using shadcn Select
     - Add speed slider (shadcn Slider)
     - Add angle input for fixed mode (shadcn Input)
     - Add start/stop button
     - _Requirements: 3.3, 3.4, 3.5, 3.6, 3.9_
-  - [ ] 7.5 Assemble Visualizer page
+  - [x] 7.5 Assemble Visualizer page
     - Integrate ShapeCanvas, ShapeControls, ShapeList, RotationControls
     - Apply responsive grid layout
     - Ensure layout stability (no shifting)
     - _Requirements: 6.3_
 
-- [ ] 8. Checkpoint - Ensure all tests pass
+- [x] 8. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Implement FFT audio processing
