@@ -12,7 +12,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Slider } from '$lib/components/ui/slider';
-  import { shapeStore } from '$lib/stores/shapeStore';
+  import { shapeStore } from '$lib/stores/shapeStore.svelte';
   import { validateFrequencyInput } from '$lib/shapeEngine';
 
   // Local state for frequency input

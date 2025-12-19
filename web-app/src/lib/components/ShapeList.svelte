@@ -11,7 +11,7 @@
    */
   import { Button } from '$lib/components/ui/button';
   import { Checkbox } from '$lib/components/ui/checkbox';
-  import { shapeStore } from '$lib/stores/shapeStore';
+  import { shapeStore } from '$lib/stores/shapeStore.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
 
   /**

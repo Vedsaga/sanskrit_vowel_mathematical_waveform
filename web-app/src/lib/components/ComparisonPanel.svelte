@@ -14,7 +14,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Trash2 } from '@lucide/svelte';
-	import type { PanelAudioState, ComparisonStore } from '$lib/stores/comparisonStore';
+	import type { PanelAudioState, ComparisonStore } from '$lib/stores/comparisonStore.svelte';
 	import type { FrequencyComponent, ShapeConfig } from '$lib/types';
 
 	// Props

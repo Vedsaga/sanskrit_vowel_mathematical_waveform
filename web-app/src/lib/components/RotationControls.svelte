@@ -16,7 +16,7 @@
   import { Slider } from '$lib/components/ui/slider';
   import * as Select from '$lib/components/ui/select';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
-  import { shapeStore } from '$lib/stores/shapeStore';
+  import { shapeStore } from '$lib/stores/shapeStore.svelte';
   import { animationLoop } from '$lib/animationLoop';
   import { onMount, onDestroy } from 'svelte';
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
