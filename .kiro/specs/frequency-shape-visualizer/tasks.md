@@ -62,17 +62,17 @@
     - **Property 7: Shape Collection Integrity (Remove)**
     - **Validates: Requirements 3.7**
 
-- [ ] 4. Checkpoint - Ensure all tests pass
+- [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement ShapeCanvas component
-  - [ ] 5.1 Create ShapeCanvas.svelte with HTML Canvas
+- [x] 5. Implement ShapeCanvas component
+  - [x] 5.1 Create ShapeCanvas.svelte with HTML Canvas
     - Set up canvas with proper sizing and DPI handling
     - Implement `renderShape()` function for drawing shapes
     - Apply Project Vak theme (card background, noise overlay)
     - Center shapes at canvas origin
     - _Requirements: 2.6, 6.3_
-  - [ ] 5.2 Implement multi-shape rendering with overlay
+  - [x] 5.2 Implement multi-shape rendering with overlay
     - Render all shapes from store with independent colors/opacity
     - Highlight selected shapes with brand color (#df728b)
     - Implement z-ordering for overlapping shapes
