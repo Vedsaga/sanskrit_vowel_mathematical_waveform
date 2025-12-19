@@ -42,14 +42,14 @@
     - **Property 3: Input Validation Rejection**
     - **Validates: Requirements 2.5**
 
-- [-] 3. Implement shape store and state management
+- [x] 3. Implement shape store and state management
   - [x] 3.1 Create shapeStore.ts with Svelte 5 runes
     - Implement shapes array state with $state rune
     - Implement config state with global A (wiggle amplitude)
     - Implement selectedIds Set for multi-selection
     - Implement rotation state
     - _Requirements: 3.1, 3.2_
-  - [-] 3.2 Implement shape CRUD operations
+  - [x] 3.2 Implement shape CRUD operations
     - Implement `addShape(fq)` action
     - Implement `removeShape(id)` action
     - Implement `selectShape(id, multi?)` action
