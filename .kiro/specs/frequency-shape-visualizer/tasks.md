@@ -151,19 +151,19 @@
     - **Property 2: Structural Invariance**
     - **Validates: Requirements 2.7, 2.8, 2.9, 4.8**
 
-- [ ] 10. Build Audio Analysis page
-  - [ ] 10.1 Create AudioUploader.svelte component
+- [-] 10. Build Audio Analysis page
+  - [x] 10.1 Create AudioUploader.svelte component
     - Implement drag-and-drop zone for audio files
     - Validate file format (WAV, MP3, OGG)
     - Display loading state during file processing
     - Display error state for unsupported formats
     - _Requirements: 4.1, 4.6, 4.7, 6.1, 6.2_
-  - [ ] 10.2 Create audioStore.ts for audio state management
+  - [x] 10.2 Create audioStore.ts for audio state management
     - Manage audioBuffer, fileName, isProcessing, error states
     - Store FFT results and frequency components
     - Store normalization strategy and fq range settings
     - _Requirements: 4.2, 4.3_
-  - [ ] 10.3 Create FFTDisplay.svelte component
+  - [x] 10.3 Create FFTDisplay.svelte component
     - Display list of frequency components with Hz and amplitude
     - Add checkboxes for selecting components
     - Add "Generate Shapes" button
