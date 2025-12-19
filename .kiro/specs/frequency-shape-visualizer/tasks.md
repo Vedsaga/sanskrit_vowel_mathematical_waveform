@@ -129,17 +129,17 @@
 - [x] 8. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Implement FFT audio processing
-  - [ ] 9.1 Create fftProcessor.ts with Web Audio API
+- [x] 9. Implement FFT audio processing
+  - [x] 9.1 Create fftProcessor.ts with Web Audio API
     - Implement `computeFFT(audioBuffer, fftSize)` using AnalyserNode
     - Return FFTResult with frequencies and magnitudes arrays
     - _Requirements: 4.2_
-  - [ ] 9.2 Implement frequency-to-fq mapping
+  - [x] 9.2 Implement frequency-to-fq mapping
     - Implement `mapFrequencyToFq(frequencyHz, strategy, options)` function
     - Support linear and logarithmic normalization strategies
     - Ensure deterministic mapping (same input → same output)
     - _Requirements: 4.4_
-  - [ ] 9.3 Implement frequency component extraction
+  - [x] 9.3 Implement frequency component extraction
     - Implement `extractTopFrequencies(fftResult, count)` function
     - Sort by magnitude and return top N components
     - Map each component to integer fq value

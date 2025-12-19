@@ -24,6 +24,17 @@ export {
   type StopCallback
 } from "./animationLoop.js";
 
+// FFT processor exports
+export {
+  computeFFT,
+  computeFFTSync,
+  mapFrequencyToFq,
+  extractTopFrequencies,
+  validateFFTParams,
+  type NormalizationStrategy,
+  type NormalizationOptions
+} from "./fftProcessor.js";
+
 // Type exports
 export type {
   Point,
