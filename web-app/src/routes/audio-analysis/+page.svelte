@@ -117,6 +117,7 @@
 						onDeselectAll={handleDeselectAll}
 						onGenerateShapes={handleGenerateShapes}
 						showAmplitudeMapping={true}
+						{isProcessing}
 					/>
 				</Card.Content>
 			</Card.Root>

@@ -6,11 +6,13 @@
 	 * Allows selection of components for shape generation.
 	 * Optionally maps amplitude to visual properties.
 	 * 
-	 * Requirements: 4.3, 4.4, 4.8
+	 * Requirements: 4.3, 4.4, 4.8, 6.1
 	 */
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Button } from '$lib/components/ui/button';
-	import { Waves, Sparkles, CheckSquare, Square } from '@lucide/svelte';
+	import { Spinner } from '$lib/components/ui/spinner';
+	import ErrorState from './ErrorState.svelte';
+	import { Waves, Sparkles, CheckSquare, Square, Loader2 } from '@lucide/svelte';
 	import type { FrequencyComponent } from '$lib/types';
 
 	// Props
@@ -21,6 +23,9 @@
 		onDeselectAll?: () => void;
 		onGenerateShapes?: (components: FrequencyComponent[]) => void;
 		showAmplitudeMapping?: boolean;
+		isProcessing?: boolean;
+		error?: string | null;
+		onRetry?: () => void;
 	}
 
 	let {
@@ -29,7 +34,10 @@
 		onSelectAll,
 		onDeselectAll,
 		onGenerateShapes,
-		showAmplitudeMapping = true
+		showAmplitudeMapping = true,
+		isProcessing = false,
+		error = null,
+		onRetry
 	}: Props = $props();
 
 	// Derived state
@@ -98,7 +106,24 @@
 </script>
 
 <div class="fft-display">
-	{#if components.length === 0}
+	{#if error}
+		<!-- Error state -->
+		<ErrorState
+			title="Analysis Failed"
+			message={error}
+			onRetry={onRetry}
+			showRetry={!!onRetry}
+		/>
+	{:else if isProcessing}
+		<!-- Processing state -->
+		<div class="processing-state">
+			<div class="processing-icon">
+				<Loader2 size={32} class="animate-spin" />
+			</div>
+			<p class="processing-title">Analyzing audio...</p>
+			<p class="processing-subtitle">Computing frequency components</p>
+		</div>
+	{:else if components.length === 0}
 		<!-- Empty state -->
 		<div class="empty-state">
 			<div class="empty-icon">
@@ -201,6 +226,41 @@
 		flex-direction: column;
 		height: 100%;
 		min-height: 300px;
+	}
+
+	/* Processing state */
+	.processing-state {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+		text-align: center;
+		color: var(--color-muted-foreground);
+	}
+
+	.processing-icon {
+		width: 64px;
+		height: 64px;
+		border-radius: var(--radius-full);
+		background-color: color-mix(in srgb, var(--color-brand) 15%, var(--color-muted));
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 1rem;
+		color: var(--color-brand);
+	}
+
+	.processing-title {
+		font-size: 1rem;
+		font-weight: 500;
+		color: var(--color-foreground);
+		margin-bottom: 0.25rem;
+	}
+
+	.processing-subtitle {
+		font-size: 0.875rem;
 	}
 
 	/* Empty state */

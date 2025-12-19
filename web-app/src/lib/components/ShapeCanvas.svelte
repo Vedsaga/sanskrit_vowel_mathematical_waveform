@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import type { Shape, ShapeConfig, Point } from '$lib/types';
 	import { generateShapePoints } from '$lib/shapeEngine';
+	import CanvasSkeleton from './CanvasSkeleton.svelte';
+	import ErrorState from './ErrorState.svelte';
 
 	/**
 	 * ShapeCanvas Component
@@ -9,7 +11,7 @@
 	 * Renders frequency shapes on an HTML Canvas with proper DPI handling,
 	 * Project Vak theme styling, and multi-shape overlay support.
 	 * 
-	 * Requirements: 2.6, 3.1, 3.2, 3.8, 6.3
+	 * Requirements: 2.6, 3.1, 3.2, 3.8, 6.1, 6.2, 6.3
 	 */
 
 	// Props
@@ -20,6 +22,9 @@
 		width?: number;
 		height?: number;
 		showGrid?: boolean;
+		isLoading?: boolean;
+		error?: string | null;
+		onRetry?: () => void;
 	}
 
 	let {
@@ -28,7 +33,10 @@
 		selectedIds = new Set<string>(),
 		width = 400,
 		height = 400,
-		showGrid = true
+		showGrid = true,
+		isLoading = false,
+		error = null,
+		onRetry
 	}: Props = $props();
 
 	// Canvas element reference
@@ -241,13 +249,26 @@
 	});
 </script>
 
-<div class="shape-canvas-container bg-noise">
-	<canvas
-		bind:this={canvas}
-		style="width: {width}px; height: {height}px;"
-		class="shape-canvas"
-	></canvas>
-</div>
+{#if error}
+	<div class="shape-canvas-container error-container" style="width: {width}px; height: {height}px;">
+		<ErrorState
+			title="Canvas Error"
+			message={error}
+			onRetry={onRetry}
+			showRetry={!!onRetry}
+		/>
+	</div>
+{:else if isLoading}
+	<CanvasSkeleton {width} {height} />
+{:else}
+	<div class="shape-canvas-container bg-noise">
+		<canvas
+			bind:this={canvas}
+			style="width: {width}px; height: {height}px;"
+			class="shape-canvas"
+		></canvas>
+	</div>
+{/if}
 
 <style>
 	.shape-canvas-container {
@@ -258,6 +279,13 @@
 		border: 1px solid var(--color-border);
 		overflow: hidden;
 		box-shadow: var(--shadow-md);
+	}
+
+	.shape-canvas-container.error-container {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-color: var(--color-destructive);
 	}
 
 	.shape-canvas {

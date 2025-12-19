@@ -36,6 +36,8 @@
   let hasSelectedShapes = $derived(shapeStore.selectedIds.size > 0);
   let isStartDisabled = $derived(!hasSelectedShapes);
   let showAngleInput = $derived(mode === 'fixed');
+  // Disable all controls when no shapes are selected (Requirement 6.4)
+  let areControlsDisabled = $derived(!hasSelectedShapes);
 
   /**
    * Validates the target angle input
@@ -168,7 +170,7 @@
   <h3 class="text-sm font-medium text-foreground">Rotation Controls</h3>
 
   <!-- Direction Toggle -->
-  <div class="space-y-2">
+  <div class="space-y-2" class:controls-disabled={areControlsDisabled}>
     <span id="direction-label" class="text-xs text-muted-foreground">Direction</span>
     <ToggleGroup.Root
       aria-labelledby="direction-label"
@@ -176,11 +178,13 @@
       value={direction}
       onValueChange={handleDirectionChange}
       class="w-full"
+      disabled={areControlsDisabled}
     >
       <ToggleGroup.Item 
         value="counterclockwise" 
         class="flex-1 gap-1.5"
         aria-label="Counter-clockwise rotation"
+        disabled={areControlsDisabled}
       >
         <RotateCcw class="h-4 w-4" />
         <span class="text-xs">CCW</span>
@@ -189,6 +193,7 @@
         value="clockwise" 
         class="flex-1 gap-1.5"
         aria-label="Clockwise rotation"
+        disabled={areControlsDisabled}
       >
         <RotateCw class="h-4 w-4" />
         <span class="text-xs">CW</span>
@@ -197,10 +202,10 @@
   </div>
 
   <!-- Mode Select -->
-  <div class="space-y-2">
+  <div class="space-y-2" class:controls-disabled={areControlsDisabled}>
     <span id="mode-label" class="text-xs text-muted-foreground">Mode</span>
-    <Select.Root type="single" value={mode} onValueChange={handleModeChange}>
-      <Select.Trigger class="w-full">
+    <Select.Root type="single" value={mode} onValueChange={handleModeChange} disabled={areControlsDisabled}>
+      <Select.Trigger class="w-full" disabled={areControlsDisabled}>
         {mode === 'loop' ? 'Loop (continuous)' : 'Fixed angle'}
       </Select.Trigger>
       <Select.Content>
@@ -238,7 +243,7 @@
   {/if}
 
   <!-- Speed Slider -->
-  <div class="space-y-2">
+  <div class="space-y-2" class:controls-disabled={areControlsDisabled}>
     <div class="flex items-center justify-between">
       <span id="speed-label" class="text-xs text-muted-foreground">Speed</span>
       <span class="text-xs text-muted-foreground tabular-nums">
@@ -253,6 +258,7 @@
       max={5}
       step={0.1}
       class="w-full"
+      disabled={areControlsDisabled}
     />
   </div>
 
@@ -278,3 +284,10 @@
     </p>
   {/if}
 </div>
+
+<style>
+  .controls-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+</style>
