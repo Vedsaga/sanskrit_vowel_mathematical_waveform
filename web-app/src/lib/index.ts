@@ -15,6 +15,15 @@ export {
 // Store exports
 export { shapeStore, type ShapeStore } from "./stores/index.js";
 
+// Animation loop exports
+export {
+  animationLoop,
+  createAnimationLoop,
+  type AnimationLoop,
+  type PhiUpdateCallback,
+  type StopCallback
+} from "./animationLoop.js";
+
 // Type exports
 export type {
   Point,

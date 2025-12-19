@@ -78,14 +78,14 @@
     - Implement z-ordering for overlapping shapes
     - _Requirements: 3.1, 3.2, 3.8_
 
-- [ ] 6. Implement rotation animation system
-  - [ ] 6.1 Create animationLoop.ts for rotation control
+- [x] 6. Implement rotation animation system
+  - [x] 6.1 Create animationLoop.ts for rotation control
     - Implement requestAnimationFrame-based animation loop
     - Implement `startRotation(direction, mode, targetAngle?)` function
     - Implement `stopRotation()` function
     - Handle clockwise (decrease phi) and counter-clockwise (increase phi)
     - _Requirements: 3.3, 3.4, 3.5_
-  - [ ] 6.2 Implement fixed rotation mode
+  - [x] 6.2 Implement fixed rotation mode
     - Calculate target phi from degrees to radians
     - Stop animation when target angle reached
     - _Requirements: 3.6_
@@ -96,8 +96,8 @@
     - **Property 5: Fixed Rotation Accuracy**
     - **Validates: Requirements 3.6**
 
-- [ ] 7. Build Visualizer page UI components
-  - [ ] 7.1 Install required shadcn-svelte components
+- [-] 7. Build Visualizer page UI components
+  - [-] 7.1 Install required shadcn-svelte components
     - Install Button, Input, Slider, Select, Toggle Group, Card, Checkbox components
     - Configure component variants for Project Vak theme
     - _Requirements: 6.5_
