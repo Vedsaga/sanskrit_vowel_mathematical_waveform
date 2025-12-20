@@ -6,7 +6,7 @@
  * top frequency components for visualization.
  */
 
-import type { FFTResult, FrequencyComponent } from './types';
+import type { FFTResult, FrequencyComponent, WindowType } from './types';
 
 /**
  * Normalization strategy for mapping FFT frequencies to shape fq values
@@ -58,7 +58,7 @@ export async function computeFFT(
 
   const sampleRate = audioBuffer.sampleRate;
   const channelData = audioBuffer.getChannelData(0);
-  
+
   // Create offline audio context for processing
   const offlineContext = new OfflineAudioContext(
     1,
@@ -100,7 +100,7 @@ export async function computeFFT(
     const dbValue = frequencyData[i];
     // Normalize: -100dB -> 0, 0dB -> 1
     const magnitude = Math.max(0, (dbValue + 100) / 100);
-    
+
     frequencies.push(frequency);
     magnitudes.push(magnitude);
   }
@@ -133,11 +133,11 @@ export function computeFFTSync(
 
   const sampleRate = audioBuffer.sampleRate;
   const channelData = audioBuffer.getChannelData(0);
-  
+
   // Take a sample from the middle of the audio for analysis
   const startIndex = Math.max(0, Math.floor(channelData.length / 2) - fftSize / 2);
   const samples = new Float32Array(fftSize);
-  
+
   for (let i = 0; i < fftSize; i++) {
     const idx = startIndex + i;
     samples[i] = idx < channelData.length ? channelData[idx] : 0;
@@ -296,4 +296,249 @@ export function validateFFTParams(fftSize: number): { valid: boolean; error?: st
     return { valid: false, error: 'FFT size must be a power of 2' };
   }
   return { valid: true };
+}
+
+/**
+ * Options for Short-Time Fourier Transform (STFT)
+ */
+export interface STFTOptions {
+  /** Start time in seconds */
+  startTime: number;
+  /** Window width in milliseconds */
+  windowWidth: number;
+  /** Step size in milliseconds for sliding window */
+  stepSize: number;
+  /** Window function type */
+  windowType: WindowType;
+  /** FFT size (power of 2, default: 2048) */
+  fftSize?: number;
+}
+
+/**
+ * Applies a window function to samples
+ * 
+ * @param samples - The sample array to window (modified in place)
+ * @param windowType - Type of window function
+ */
+function applyWindow(samples: Float32Array, windowType: WindowType): void {
+  const N = samples.length;
+
+  for (let i = 0; i < N; i++) {
+    let w: number;
+
+    switch (windowType) {
+      case 'hann':
+        w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+        break;
+      case 'hamming':
+        w = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (N - 1));
+        break;
+      case 'blackman':
+        w = 0.42 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1))
+          + 0.08 * Math.cos((4 * Math.PI * i) / (N - 1));
+        break;
+      case 'rectangular':
+      default:
+        w = 1;
+        break;
+    }
+
+    samples[i] *= w;
+  }
+}
+
+/**
+ * Computes DFT on a windowed sample array
+ * 
+ * @param samples - Windowed samples
+ * @param sampleRate - Sample rate of the audio
+ * @returns FFTResult for this window
+ */
+function computeDFT(samples: Float32Array, sampleRate: number): FFTResult {
+  const fftSize = samples.length;
+  const frequencyBinCount = fftSize / 2;
+  const frequencies: number[] = [];
+  const magnitudes: number[] = [];
+  const binWidth = sampleRate / fftSize;
+
+  for (let k = 0; k < frequencyBinCount; k++) {
+    let real = 0;
+    let imag = 0;
+
+    for (let n = 0; n < fftSize; n++) {
+      const angle = (2 * Math.PI * k * n) / fftSize;
+      real += samples[n] * Math.cos(angle);
+      imag -= samples[n] * Math.sin(angle);
+    }
+
+    const magnitude = Math.sqrt(real * real + imag * imag) / fftSize;
+    frequencies.push(k * binWidth);
+    magnitudes.push(magnitude);
+  }
+
+  // Normalize magnitudes to 0-1 range
+  const maxMagnitude = Math.max(...magnitudes, 1e-10);
+  const normalizedMagnitudes = magnitudes.map(m => m / maxMagnitude);
+
+  return {
+    frequencies,
+    magnitudes: normalizedMagnitudes,
+    sampleRate
+  };
+}
+
+/**
+ * Computes Short-Time Fourier Transform (STFT) on an audio buffer.
+ * 
+ * Slides a window across the audio and computes FFT for each position,
+ * enabling time-frequency analysis.
+ * 
+ * @param audioBuffer - The audio buffer to analyze
+ * @param options - STFT configuration options
+ * @returns Array of FFTResult for each window position
+ */
+export function computeSTFT(
+  audioBuffer: AudioBuffer,
+  options: STFTOptions
+): FFTResult[] {
+  const { startTime, windowWidth, stepSize, windowType, fftSize = 2048 } = options;
+  const sampleRate = audioBuffer.sampleRate;
+  const channelData = audioBuffer.getChannelData(0);
+
+  // Convert times to sample indices
+  const startSample = Math.floor(startTime * sampleRate);
+  const windowSamples = Math.floor((windowWidth / 1000) * sampleRate);
+  const stepSamples = Math.floor((stepSize / 1000) * sampleRate);
+
+  // Determine how many samples to use (limited by fftSize)
+  const actualWindowSize = Math.min(windowSamples, fftSize);
+
+  // Calculate number of windows
+  const totalSamples = channelData.length;
+  const results: FFTResult[] = [];
+
+  let currentStart = startSample;
+
+  while (currentStart + actualWindowSize <= totalSamples) {
+    // Extract samples for this window
+    const samples = new Float32Array(fftSize);
+
+    for (let i = 0; i < actualWindowSize && currentStart + i < totalSamples; i++) {
+      samples[i] = channelData[currentStart + i];
+    }
+    // Remaining samples are zero-padded
+
+    // Apply window function
+    applyWindow(samples, windowType);
+
+    // Compute DFT for this window
+    const result = computeDFT(samples, sampleRate);
+    results.push(result);
+
+    // Move to next window
+    currentStart += stepSamples;
+
+    // Safety limit to prevent infinite loops
+    if (results.length > 10000) {
+      console.warn('STFT: Maximum window count reached');
+      break;
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Computes a single FFT window at a specific time position.
+ * 
+ * @param audioBuffer - The audio buffer to analyze
+ * @param startTime - Start time in seconds
+ * @param windowWidth - Window width in milliseconds
+ * @param windowType - Window function type
+ * @param fftSize - FFT size (default: 2048)
+ * @returns FFTResult for this time window
+ */
+export function computeFFTAtTime(
+  audioBuffer: AudioBuffer,
+  startTime: number,
+  windowWidth: number,
+  windowType: WindowType = 'hann',
+  fftSize: number = 2048
+): FFTResult {
+  const results = computeSTFT(audioBuffer, {
+    startTime,
+    windowWidth,
+    stepSize: windowWidth, // Single step
+    windowType,
+    fftSize
+  });
+
+  return results[0] || {
+    frequencies: [],
+    magnitudes: [],
+    sampleRate: audioBuffer.sampleRate
+  };
+}
+
+/**
+ * Computes spectral flux for transient detection.
+ * 
+ * Spectral flux measures the rate of change in the spectrum over time.
+ * High values indicate transients (sudden changes in frequency content).
+ * 
+ * Flux(t) = Σf (|X(t,f)| - |X(t-1,f)|)²
+ * 
+ * @param fftResults - Array of FFT results from STFT
+ * @returns Array of spectral flux values (one per frame, starting from index 1)
+ */
+export function computeSpectralFlux(fftResults: FFTResult[]): number[] {
+  if (fftResults.length < 2) {
+    return [];
+  }
+
+  const fluxValues: number[] = [];
+
+  for (let t = 1; t < fftResults.length; t++) {
+    const current = fftResults[t].magnitudes;
+    const previous = fftResults[t - 1].magnitudes;
+
+    let flux = 0;
+    const binCount = Math.min(current.length, previous.length);
+
+    for (let f = 0; f < binCount; f++) {
+      // Only consider positive changes (onset detection)
+      const diff = current[f] - previous[f];
+      if (diff > 0) {
+        flux += diff * diff;
+      }
+    }
+
+    fluxValues.push(Math.sqrt(flux));
+  }
+
+  // Normalize flux values
+  const maxFlux = Math.max(...fluxValues, 1e-10);
+  return fluxValues.map(f => f / maxFlux);
+}
+
+/**
+ * Detects transients based on spectral flux threshold.
+ * 
+ * @param fluxValues - Normalized spectral flux values
+ * @param threshold - Detection threshold (0-1, default: 0.5)
+ * @returns Array of indices where transients are detected
+ */
+export function detectTransients(
+  fluxValues: number[],
+  threshold: number = 0.5
+): number[] {
+  const transients: number[] = [];
+
+  for (let i = 0; i < fluxValues.length; i++) {
+    if (fluxValues[i] > threshold) {
+      transients.push(i + 1); // Offset by 1 because flux starts at frame 1
+    }
+  }
+
+  return transients;
 }

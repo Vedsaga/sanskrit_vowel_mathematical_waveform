@@ -10,7 +10,7 @@
  * Requirements: 3.1, 3.2, 3.7
  */
 
-import type { Shape, ShapeConfig, RotationState } from '../types';
+import type { Shape, ShapeConfig, RotationState, AnimationOverride } from '../types';
 
 /**
  * Default configuration values
@@ -148,7 +148,7 @@ function createShapeStore() {
     removeShape(id: string): boolean {
       const initialLength = shapes.length;
       shapes = shapes.filter(s => s.id !== id);
-      
+
       // Also remove from selection if selected
       if (selectedIds.has(id)) {
         const newSelectedIds = new Set(selectedIds);
@@ -214,7 +214,7 @@ function createShapeStore() {
       const index = shapes.findIndex(s => s.id === id);
       if (index === -1) return false;
 
-      shapes = shapes.map(s => 
+      shapes = shapes.map(s =>
         s.id === id ? { ...s, ...properties } : s
       );
       return true;
@@ -273,20 +273,69 @@ function createShapeStore() {
     },
 
     /**
+     * Sets animation override for a specific shape
+     * 
+     * @param shapeId - The ID of the shape
+     * @param override - Animation override settings (or undefined to clear)
+     */
+    setShapeAnimationOverride(shapeId: string, override: AnimationOverride | undefined): void {
+      shapes = shapes.map(s =>
+        s.id === shapeId ? { ...s, animationOverride: override } : s
+      );
+    },
+
+    /**
+     * Clears animation overrides for all selected shapes
+     */
+    clearSelectedAnimationOverrides(): void {
+      shapes = shapes.map(s => {
+        if (selectedIds.has(s.id)) {
+          const { animationOverride, ...rest } = s;
+          return rest as Shape;
+        }
+        return s;
+      });
+    },
+
+    /**
      * Updates the phase offset of selected shapes
      * Used by animation loop to apply rotation
      * 
-     * @param deltaPhi - Change in phase offset (radians)
+     * Respects per-shape animation overrides:
+     * - Shapes with mode 'none' are skipped
+     * - Per-shape speed and direction override global settings
+     * 
+     * @param deltaPhi - Base change in phase offset (radians)
+     * @param deltaTime - Time elapsed since last frame (seconds)
      */
-    updateSelectedShapesPhi(deltaPhi: number): void {
+    updateSelectedShapesPhi(deltaPhi: number, deltaTime?: number): void {
       shapes = shapes.map(s => {
-        if (selectedIds.has(s.id)) {
-          return {
-            ...s,
-            phi: s.phi + deltaPhi
-          };
+        if (!selectedIds.has(s.id)) {
+          return s;
         }
-        return s;
+
+        // Check for animation override
+        const override = s.animationOverride;
+
+        // Skip shapes with 'none' mode
+        if (override?.mode === 'none') {
+          return s;
+        }
+
+        // Calculate effective delta phi
+        let effectiveDelta = deltaPhi;
+
+        if (override && deltaTime !== undefined) {
+          // Use per-shape speed if available
+          const speed = override.speed ?? rotation.speed;
+          const direction = override.direction ?? (rotation.direction === 'clockwise' ? 'cw' : 'ccw');
+          effectiveDelta = speed * deltaTime * (direction === 'cw' ? -1 : 1);
+        }
+
+        return {
+          ...s,
+          phi: s.phi + effectiveDelta
+        };
       });
     },
 

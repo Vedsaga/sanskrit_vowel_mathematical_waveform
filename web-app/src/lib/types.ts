@@ -13,34 +13,7 @@ export interface Point {
   y: number;
 }
 
-/**
- * Represents a frequency shape with all its visual and geometric properties
- * 
- * The shape is defined by the formula: r(θ) = R + A·sin((fq-1)·θ + φ)
- * where:
- * - R is the base radius
- * - A is the wiggle amplitude (from ShapeConfig)
- * - fq is the frequency (determines number of wiggles = fq - 1)
- * - φ (phi) is the phase offset for rotation
- */
-export interface Shape {
-  /** Unique identifier for the shape */
-  id: string;
-  /** Frequency value (integer ≥ 1), determines wiggle count = fq - 1 */
-  fq: number;
-  /** Base radius of the shape */
-  R: number;
-  /** Phase offset for rotation (radians) */
-  phi: number;
-  /** Stroke color (CSS color string) */
-  color: string;
-  /** Stroke opacity (0-1) */
-  opacity: number;
-  /** Stroke width in pixels */
-  strokeWidth: number;
-  /** Whether the shape is currently selected */
-  selected: boolean;
-}
+// Shape interface is defined at the end of this file with extended properties
 
 /**
  * Global configuration for shape rendering
@@ -109,4 +82,139 @@ export interface FrequencyComponent {
   fq: number;
   /** Whether this component is selected for visualization */
   selected: boolean;
+  /** Badges indicating properties (harmonic, prime, golden ratio, etc.) */
+  badges?: ('P' | 'E' | 'O' | 'H2' | 'H3' | 'H4' | 'H5' | 'H6' | 'H7' | 'H8' | 'φ')[];
+}
+
+/**
+ * Animation override for per-shape animation control
+ */
+export interface AnimationOverride {
+  /** Angular velocity in radians per second */
+  speed?: number;
+  /** Rotation direction */
+  direction?: 'cw' | 'ccw';
+  /** Animation mode */
+  mode?: 'loop' | 'fixed' | 'none';
+}
+
+/**
+ * Time window configuration for STFT analysis
+ */
+export interface TimeWindow {
+  /** Start time in seconds */
+  start: number;
+  /** Window width in milliseconds */
+  width: number;
+  /** Step size in milliseconds for sliding window */
+  step: number;
+  /** Window function type */
+  type: WindowType;
+}
+
+/**
+ * Window function types for FFT
+ */
+export type WindowType = 'hann' | 'rectangular' | 'hamming' | 'blackman';
+
+/**
+ * Frequency range filter
+ */
+export interface FrequencyRange {
+  /** Minimum frequency in Hz */
+  min: number;
+  /** Maximum frequency in Hz */
+  max: number;
+}
+
+/**
+ * Geometry rendering mode
+ */
+export type GeometryMode = 'single' | 'overlay' | 'accumulation';
+
+/**
+ * Global settings that apply to all analyses
+ */
+export interface GlobalSettings {
+  /** Time window for STFT analysis */
+  timeWindow: TimeWindow;
+  /** Frequency range filter */
+  frequencyRange: FrequencyRange;
+  /** Wiggle amplitude (A) */
+  amplitude: number;
+  /** Rotation state */
+  rotation: RotationState;
+  /** Whether to normalize energy (amplitude-invariant geometry) */
+  normalize: boolean;
+  /** Whether to suppress transient components */
+  suppressTransients: boolean;
+  /** Threshold for spectral flux (transient detection) */
+  transientThreshold: number;
+  /** Geometry rendering mode */
+  geometryMode: GeometryMode;
+}
+
+/**
+ * Analysis state representing a single analysis tile
+ * Properties that are undefined inherit from GlobalSettings
+ */
+export interface AnalysisState {
+  /** Unique identifier */
+  id: string;
+  /** User-defined label for the analysis */
+  label: string;
+  /** Time of creation */
+  createdAt: number;
+  // --- Local overrides (undefined = inherit from global) ---
+  /** Override time window */
+  timeWindow?: TimeWindow;
+  /** Override frequency range */
+  frequencyRange?: FrequencyRange;
+  /** Override amplitude */
+  amplitude?: number;
+  /** Override rotation state */
+  rotation?: RotationState;
+  /** Override normalize setting */
+  normalize?: boolean;
+  /** Override transient suppression */
+  suppressTransients?: boolean;
+  // --- Computed/derived state ---
+  /** Extracted frequency components */
+  frequencyComponents: FrequencyComponent[];
+  /** Generated shapes from selected components */
+  shapes: Shape[];
+  /** Calculated stability score (0-1) */
+  stabilityScore?: number;
+  /** Whether energy invariance holds */
+  energyInvariant?: boolean;
+  /** Transient score (0-1) */
+  transientScore?: number;
+}
+
+/**
+ * Extended Shape interface with animation overrides and traceability
+ */
+export interface Shape {
+  /** Unique identifier for the shape */
+  id: string;
+  /** Frequency value (integer ≥ 1), determines wiggle count = fq - 1 */
+  fq: number;
+  /** Base radius of the shape */
+  R: number;
+  /** Phase offset for rotation (radians) */
+  phi: number;
+  /** Stroke color (CSS color string) */
+  color: string;
+  /** Stroke opacity (0-1) */
+  opacity: number;
+  /** Stroke width in pixels */
+  strokeWidth: number;
+  /** Whether the shape is currently selected */
+  selected: boolean;
+  /** Per-shape animation override (if undefined, uses global rotation) */
+  animationOverride?: AnimationOverride;
+  /** Original frequency in Hz (for traceability to audio) */
+  sourceFrequencyHz?: number;
+  /** Group ID for frequency clustering */
+  groupId?: string;
 }
