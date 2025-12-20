@@ -204,6 +204,19 @@ function createShapeStore() {
     },
 
     /**
+     * Sets the selection from an external Set
+     * 
+     * @param newSelectedIds - Set of shape IDs to select
+     */
+    setSelectedIds(newSelectedIds: Set<string>): void {
+      selectedIds = new Set(newSelectedIds);
+      shapes = shapes.map(s => ({
+        ...s,
+        selected: newSelectedIds.has(s.id)
+      }));
+    },
+
+    /**
      * Updates properties of a specific shape
      * 
      * @param id - The ID of the shape to update
@@ -218,6 +231,13 @@ function createShapeStore() {
         s.id === id ? { ...s, ...properties } : s
       );
       return true;
+    },
+
+    /**
+     * Alias for updateShapeProperty for simpler API
+     */
+    updateShape(id: string, properties: Partial<Omit<Shape, 'id'>>): boolean {
+      return this.updateShapeProperty(id, properties);
     },
 
     /**

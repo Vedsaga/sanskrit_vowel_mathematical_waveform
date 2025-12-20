@@ -1,27 +1,27 @@
 <script lang="ts">
-    import { page } from '$app/stores';
-    import { Home, Waves, AudioLines, GitCompare, Sun, Moon } from '@lucide/svelte';
-    
+    import { page } from "$app/stores";
+    import { Home, Sparkles, Eye, GitMerge, Sun, Moon } from "@lucide/svelte";
+
     let isDark = $state(true);
-    
+
     const navItems = [
-        { href: '/', label: 'Home', icon: Home },
-        { href: '/visualizer', label: 'Visualizer', icon: Waves },
-        { href: '/audio-analysis', label: 'Audio Analysis', icon: AudioLines },
-        { href: '/comparison', label: 'Comparison', icon: GitCompare },
+        { href: "/", label: "Home", icon: Home },
+        { href: "/visualizer", label: "Compose Lab", icon: Sparkles },
+        { href: "/audio-analysis", label: "Analysis Observatory", icon: Eye },
+        { href: "/comparison", label: "Convergence Studio", icon: GitMerge },
     ];
-    
+
     function toggleTheme() {
         isDark = !isDark;
-        if (typeof document !== 'undefined') {
-            document.documentElement.classList.toggle('dark', isDark);
+        if (typeof document !== "undefined") {
+            document.documentElement.classList.toggle("dark", isDark);
         }
     }
-    
+
     // Initialize dark mode on mount
     $effect(() => {
-        if (typeof document !== 'undefined') {
-            document.documentElement.classList.toggle('dark', isDark);
+        if (typeof document !== "undefined") {
+            document.documentElement.classList.toggle("dark", isDark);
         }
     });
 </script>
@@ -33,11 +33,11 @@
             <span class="logo-text">Vak</span>
         </div>
     </div>
-    
+
     <nav class="sidebar-nav">
         {#each navItems as item}
-            <a 
-                href={item.href} 
+            <a
+                href={item.href}
                 class="nav-link"
                 class:active={$page.url.pathname === item.href}
             >
@@ -46,12 +46,12 @@
             </a>
         {/each}
     </nav>
-    
+
     <div class="sidebar-footer">
-        <button 
+        <button
             class="theme-toggle"
             onclick={toggleTheme}
-            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
         >
             {#if isDark}
                 <Sun size={20} />
@@ -78,19 +78,19 @@
         padding: 1.5rem 1rem;
         z-index: 50;
     }
-    
+
     .sidebar-header {
         padding: 0 0.5rem 1.5rem;
         border-bottom: 1px solid var(--color-border);
         margin-bottom: 1.5rem;
     }
-    
+
     .logo {
         display: flex;
         align-items: center;
         gap: 0.75rem;
     }
-    
+
     .logo-icon {
         width: 40px;
         height: 40px;
@@ -102,22 +102,23 @@
         font-weight: 700;
         font-size: 1.25rem;
         color: var(--color-brand-foreground);
-        box-shadow: 0 0 20px color-mix(in srgb, var(--color-brand) 40%, transparent);
+        box-shadow: 0 0 20px
+            color-mix(in srgb, var(--color-brand) 40%, transparent);
     }
-    
+
     .logo-text {
         font-size: 1.5rem;
         font-weight: 700;
         letter-spacing: -0.5px;
     }
-    
+
     .sidebar-nav {
         flex: 1;
         display: flex;
         flex-direction: column;
         gap: 0.25rem;
     }
-    
+
     .nav-link {
         display: flex;
         align-items: center;
@@ -130,23 +131,24 @@
         font-size: 0.9rem;
         transition: all var(--transition-fast);
     }
-    
+
     .nav-link:hover {
         background-color: var(--color-muted);
         color: var(--color-foreground);
     }
-    
+
     .nav-link.active {
         background-color: var(--color-brand);
         color: var(--color-brand-foreground);
-        box-shadow: 0 2px 8px color-mix(in srgb, var(--color-brand) 30%, transparent);
+        box-shadow: 0 2px 8px
+            color-mix(in srgb, var(--color-brand) 30%, transparent);
     }
-    
+
     .sidebar-footer {
         padding-top: 1rem;
         border-top: 1px solid var(--color-border);
     }
-    
+
     .theme-toggle {
         display: flex;
         align-items: center;
@@ -162,7 +164,7 @@
         cursor: pointer;
         transition: all var(--transition-fast);
     }
-    
+
     .theme-toggle:hover {
         background-color: var(--color-muted);
         color: var(--color-foreground);
