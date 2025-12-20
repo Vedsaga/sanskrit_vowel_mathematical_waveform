@@ -1,18 +1,28 @@
 <script lang="ts">
 	/**
 	 * AudioUploader Component
-	 * 
+	 *
 	 * Provides drag-and-drop and click-to-upload functionality for audio files.
 	 * Validates file formats (WAV, MP3, OGG) and displays loading/error states.
-	 * 
+	 * After upload, shows AudioMetadata and AudioPlayer.
+	 *
 	 * Requirements: 4.1, 4.6, 4.7, 6.1, 6.2
+	 * Phase 1: Task 1.7 Integration
 	 */
-	import { Upload, FileAudio, AlertCircle, Loader2, X } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Upload, FileAudio, AlertCircle, Loader2, X } from "@lucide/svelte";
+	import { Button } from "$lib/components/ui/button";
+	import AudioMetadata from "./audio/AudioMetadata.svelte";
+	import AudioPlayer from "./audio/AudioPlayer.svelte";
 
 	// Supported audio formats
-	const SUPPORTED_FORMATS = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/x-wav'];
-	const SUPPORTED_EXTENSIONS = ['.wav', '.mp3', '.ogg'];
+	const SUPPORTED_FORMATS = [
+		"audio/wav",
+		"audio/mpeg",
+		"audio/ogg",
+		"audio/mp3",
+		"audio/x-wav",
+	];
+	const SUPPORTED_EXTENSIONS = [".wav", ".mp3", ".ogg"];
 
 	// Props
 	interface Props {
@@ -20,13 +30,17 @@
 		isProcessing?: boolean;
 		error?: string | null;
 		fileName?: string | null;
+		audioBuffer?: AudioBuffer | null;
+		showPlayerAfterUpload?: boolean;
 	}
 
 	let {
 		onFileLoaded,
 		isProcessing = false,
 		error = null,
-		fileName = null
+		fileName = null,
+		audioBuffer = null,
+		showPlayerAfterUpload = true,
 	}: Props = $props();
 
 	// Local state
@@ -46,7 +60,7 @@
 			return true;
 		}
 		// Fallback: check file extension
-		const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+		const extension = "." + file.name.split(".").pop()?.toLowerCase();
 		return SUPPORTED_EXTENSIONS.includes(extension);
 	}
 
@@ -72,7 +86,7 @@
 
 		// Validate file format
 		if (!isValidAudioFile(file)) {
-			localError = `Unsupported format. Please use ${SUPPORTED_EXTENSIONS.join(', ')} files.`;
+			localError = `Unsupported format. Please use ${SUPPORTED_EXTENSIONS.join(", ")} files.`;
 			return;
 		}
 
@@ -80,8 +94,9 @@
 			const audioBuffer = await decodeAudioFile(file);
 			onFileLoaded?.(audioBuffer, file.name);
 		} catch (err) {
-			localError = 'Failed to decode audio file. The file may be corrupted or invalid.';
-			console.error('Audio decode error:', err);
+			localError =
+				"Failed to decode audio file. The file may be corrupted or invalid.";
+			console.error("Audio decode error:", err);
 		}
 	}
 
@@ -124,7 +139,7 @@
 			handleFile(files[0]);
 		}
 		// Reset input so same file can be selected again
-		target.value = '';
+		target.value = "";
 	}
 
 	/**
@@ -155,7 +170,7 @@
 	<input
 		bind:this={fileInput}
 		type="file"
-		accept={SUPPORTED_EXTENSIONS.join(',')}
+		accept={SUPPORTED_EXTENSIONS.join(",")}
 		onchange={handleInputChange}
 		class="hidden"
 		aria-hidden="true"
@@ -174,7 +189,9 @@
 		ondrop={handleDrop}
 		onclick={openFilePicker}
 		disabled={isProcessing}
-		aria-label={fileName ? `Current file: ${fileName}. Click to change.` : 'Upload audio file'}
+		aria-label={fileName
+			? `Current file: ${fileName}. Click to change.`
+			: "Upload audio file"}
 	>
 		{#if isProcessing}
 			<!-- Loading state -->
@@ -215,15 +232,39 @@
 				</div>
 				<p class="drop-zone-title">Drop audio file here</p>
 				<p class="drop-zone-subtitle">or click to browse</p>
-				<p class="supported-formats">Supports {SUPPORTED_EXTENSIONS.join(', ')}</p>
+				<p class="supported-formats">
+					Supports {SUPPORTED_EXTENSIONS.join(", ")}
+				</p>
 			</div>
 		{/if}
 	</button>
+
+	<!-- Audio info after upload -->
+	{#if audioBuffer && fileName && !displayError && !isProcessing && showPlayerAfterUpload}
+		<div class="audio-info">
+			<AudioMetadata
+				{fileName}
+				duration={audioBuffer.duration}
+				sampleRate={audioBuffer.sampleRate}
+				channels={audioBuffer.numberOfChannels}
+			/>
+			<AudioPlayer {audioBuffer} />
+		</div>
+	{/if}
 </div>
 
 <style>
 	.audio-uploader {
 		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.audio-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
 	}
 
 	.hidden {
@@ -247,7 +288,11 @@
 
 	.drop-zone:hover:not(:disabled) {
 		border-color: var(--color-brand);
-		background-color: color-mix(in srgb, var(--color-brand) 5%, var(--color-card));
+		background-color: color-mix(
+			in srgb,
+			var(--color-brand) 5%,
+			var(--color-card)
+		);
 	}
 
 	.drop-zone:focus-visible {
@@ -257,7 +302,11 @@
 
 	.drop-zone.drag-over {
 		border-color: var(--color-brand);
-		background-color: color-mix(in srgb, var(--color-brand) 10%, var(--color-card));
+		background-color: color-mix(
+			in srgb,
+			var(--color-brand) 10%,
+			var(--color-card)
+		);
 		border-style: solid;
 	}
 
@@ -268,7 +317,11 @@
 
 	.drop-zone.has-error {
 		border-color: var(--color-destructive);
-		background-color: color-mix(in srgb, var(--color-destructive) 5%, var(--color-card));
+		background-color: color-mix(
+			in srgb,
+			var(--color-destructive) 5%,
+			var(--color-card)
+		);
 	}
 
 	.drop-zone.is-processing {
@@ -300,22 +353,38 @@
 	}
 
 	.drop-zone:hover:not(:disabled) .icon-container {
-		background-color: color-mix(in srgb, var(--color-brand) 15%, var(--color-muted));
+		background-color: color-mix(
+			in srgb,
+			var(--color-brand) 15%,
+			var(--color-muted)
+		);
 		color: var(--color-brand);
 	}
 
 	.icon-container.loading {
-		background-color: color-mix(in srgb, var(--color-brand) 15%, var(--color-muted));
+		background-color: color-mix(
+			in srgb,
+			var(--color-brand) 15%,
+			var(--color-muted)
+		);
 		color: var(--color-brand);
 	}
 
 	.icon-container.error {
-		background-color: color-mix(in srgb, var(--color-destructive) 15%, var(--color-muted));
+		background-color: color-mix(
+			in srgb,
+			var(--color-destructive) 15%,
+			var(--color-muted)
+		);
 		color: var(--color-destructive);
 	}
 
 	.icon-container.success {
-		background-color: color-mix(in srgb, var(--color-brand) 15%, var(--color-muted));
+		background-color: color-mix(
+			in srgb,
+			var(--color-brand) 15%,
+			var(--color-muted)
+		);
 		color: var(--color-brand);
 	}
 

@@ -192,8 +192,8 @@ This document tracks all tasks required to transform the current "shape generato
 - [x] Create `src/lib/components/audio/AudioMetadata.svelte`
   - [x] Display: Filename, Duration, Sample Rate, Channels
   - [x] Compact inline display (e.g., "sample.wav | 3.2s | 44.1kHz")
-- [ ] Integrate into `AudioUploader.svelte` *(deferred - page integration)*
-  - [ ] After upload, show `AudioMetadata` and `AudioPlayer`
+- [x] Integrate into `AudioUploader.svelte` ✅
+  - [x] After upload, show `AudioMetadata` and `AudioPlayer`
 
 ### 1.8 Page Assembly (Analysis Observatory) ✅
 - [x] Rename `/routes/audio-analysis/` to `/routes/analysis-observatory/` (or keep path, update title)
