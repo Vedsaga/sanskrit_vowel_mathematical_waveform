@@ -2,6 +2,7 @@
 	import { onMount } from "svelte";
 	import type { Shape, ShapeConfig, Point, GeometryMode } from "$lib/types";
 	import { generateShapePoints } from "$lib/shapeEngine";
+	import { getClickedShape, canvasEventToPoint } from "$lib/utils/hitTesting";
 	import CanvasSkeleton from "./CanvasSkeleton.svelte";
 	import ErrorState from "./ErrorState.svelte";
 
@@ -29,6 +30,9 @@
 		mode?: GeometryMode;
 		overlayShapes?: Shape[];
 		accumulationWeights?: number[];
+		// Phase 3.1: Click-to-select
+		onShapeClick?: (shapeId: string | null, event: MouseEvent) => void;
+		onSelectionChange?: (selectedIds: Set<string>) => void;
 	}
 
 	let {
@@ -44,7 +48,15 @@
 		mode = "single",
 		overlayShapes = [],
 		accumulationWeights = [],
+		onShapeClick,
+		onSelectionChange,
 	}: Props = $props();
+
+	// Local selection state (for internal management if no external handler)
+	let localSelection = $state<Set<string>>(new Set());
+	let effectiveSelection = $derived(
+		onSelectionChange ? selectedIds : localSelection,
+	);
 
 	// Canvas element reference
 	let canvas = $state<HTMLCanvasElement | null>(null);
@@ -57,6 +69,57 @@
 	const BRAND_COLOR = "#df728b";
 	const GRID_COLOR = "var(--color-border)";
 	const GRID_OPACITY = 0.1;
+	const HIT_TOLERANCE = 10; // pixels
+
+	/**
+	 * Handles canvas click for shape selection
+	 */
+	function handleCanvasClick(event: MouseEvent): void {
+		if (!canvas) return;
+
+		// Convert click to shape coordinates
+		const point = canvasEventToPoint(event, canvas);
+
+		// Find clicked shape
+		const clickedId = getClickedShape(point, shapes, config, HIT_TOLERANCE);
+
+		// Emit click event if handler provided
+		onShapeClick?.(clickedId, event);
+
+		// Handle selection
+		if (event.shiftKey && clickedId) {
+			// Shift+Click: Add to selection
+			const newSelection = new Set(effectiveSelection);
+			newSelection.add(clickedId);
+			updateSelection(newSelection);
+		} else if ((event.ctrlKey || event.metaKey) && clickedId) {
+			// Ctrl/Cmd+Click: Toggle selection
+			const newSelection = new Set(effectiveSelection);
+			if (newSelection.has(clickedId)) {
+				newSelection.delete(clickedId);
+			} else {
+				newSelection.add(clickedId);
+			}
+			updateSelection(newSelection);
+		} else if (clickedId) {
+			// Regular click: Select only this shape
+			updateSelection(new Set([clickedId]));
+		} else {
+			// Click on empty area: Deselect all
+			updateSelection(new Set());
+		}
+	}
+
+	/**
+	 * Updates selection state
+	 */
+	function updateSelection(newSelection: Set<string>): void {
+		if (onSelectionChange) {
+			onSelectionChange(newSelection);
+		} else {
+			localSelection = newSelection;
+		}
+	}
 
 	/**
 	 * Initialize canvas context with proper DPI scaling
@@ -346,6 +409,7 @@
 			bind:this={canvas}
 			style="width: {width}px; height: {height}px;"
 			class="shape-canvas"
+			onclick={handleCanvasClick}
 		></canvas>
 	</div>
 {/if}

@@ -317,8 +317,8 @@ function createShapeStore() {
         // Check for animation override
         const override = s.animationOverride;
 
-        // Skip shapes with 'none' mode
-        if (override?.mode === 'none') {
+        // Skip shapes with 'off' mode
+        if (override?.mode === 'off') {
           return s;
         }
 

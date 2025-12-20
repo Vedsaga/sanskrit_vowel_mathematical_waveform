@@ -93,10 +93,20 @@ export interface AnimationOverride {
   /** Angular velocity in radians per second */
   speed?: number;
   /** Rotation direction */
-  direction?: 'cw' | 'ccw';
+  direction?: AnimationDirection;
   /** Animation mode */
-  mode?: 'loop' | 'fixed' | 'none';
+  mode?: AnimationMode;
 }
+
+/**
+ * Animation direction type
+ */
+export type AnimationDirection = 'cw' | 'ccw' | 'none';
+
+/**
+ * Animation mode type
+ */
+export type AnimationMode = 'continuous' | 'once' | 'off';
 
 /**
  * Time window configuration for STFT analysis

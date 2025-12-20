@@ -57,7 +57,7 @@ function createAnimationLoop() {
   // Callbacks set by the consumer
   let onPhiUpdate: PhiUpdateCallback | null = null;
   let onStop: StopCallback | null = null;
-  
+
   // Current rotation configuration
   let currentDirection: 'clockwise' | 'counterclockwise' = 'clockwise';
   let currentMode: 'loop' | 'fixed' = 'loop';
@@ -99,14 +99,14 @@ function createAnimationLoop() {
       if (remaining <= absDelta) {
         // We've reached or would overshoot the target
         // Apply only the remaining rotation
-        const finalDelta = currentDirection === 'clockwise' 
-          ? -remaining 
+        const finalDelta = currentDirection === 'clockwise'
+          ? -remaining
           : remaining;
-        
+
         if (onPhiUpdate) {
           onPhiUpdate(finalDelta);
         }
-        
+
         // Stop the animation
         stopRotation();
         return;
@@ -275,3 +275,73 @@ export { createAnimationLoop };
  * Export type for the animation loop controller
  */
 export type AnimationLoop = ReturnType<typeof createAnimationLoop>;
+
+/**
+ * Per-shape animation update function
+ * 
+ * Updates a shape's phi value based on its AnimationOverride settings.
+ * This allows each shape to have independent animation parameters.
+ * 
+ * Phase 3: Task 3.3
+ * 
+ * @param shape - The shape to update
+ * @param deltaTime - Time elapsed since last frame in seconds
+ * @param globalRotation - Global rotation settings (fallback)
+ * @returns Updated phi value
+ */
+export function updateShapePhiWithOverride(
+  shape: { phi: number; animationOverride?: import('./types').AnimationOverride },
+  deltaTime: number,
+  globalRotation: import('./types').RotationState
+): number {
+  const override = shape.animationOverride;
+
+  // Get animation parameters (shape-specific or global)
+  const mode = override?.mode ?? (globalRotation.isAnimating ? 'continuous' : 'off');
+  const direction = override?.direction ?? (globalRotation.direction === 'clockwise' ? 'cw' : 'ccw');
+  const speed = override?.speed ?? globalRotation.speed;
+
+  // Skip if animation is off or direction is none
+  if (mode === 'off') {
+    return shape.phi;
+  }
+
+  if (direction === 'none') {
+    return shape.phi;
+  }
+
+  // Calculate delta phi
+  let deltaPhi = speed * deltaTime;
+
+  // Apply direction
+  if (direction === 'cw') {
+    deltaPhi = -deltaPhi;
+  }
+
+  // For 'once' mode, we'd need to track completion state per-shape
+  // This is a simplified implementation - full implementation would
+  // require tracking completed state on the shape itself
+
+  // Return updated phi (wrapped to 0..2π range)
+  const newPhi = (shape.phi + deltaPhi) % (2 * Math.PI);
+  return newPhi < 0 ? newPhi + 2 * Math.PI : newPhi;
+}
+
+/**
+ * Updates an array of shapes with per-shape animation
+ * 
+ * @param shapes - Array of shapes to update
+ * @param deltaTime - Time elapsed since last frame in seconds  
+ * @param globalRotation - Global rotation settings (fallback)
+ * @returns Updated shapes array with new phi values
+ */
+export function updateShapesWithAnimation<T extends { phi: number; animationOverride?: import('./types').AnimationOverride }>(
+  shapes: T[],
+  deltaTime: number,
+  globalRotation: import('./types').RotationState
+): T[] {
+  return shapes.map(shape => ({
+    ...shape,
+    phi: updateShapePhiWithOverride(shape, deltaTime, globalRotation)
+  }));
+}

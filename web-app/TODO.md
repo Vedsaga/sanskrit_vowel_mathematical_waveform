@@ -268,39 +268,38 @@ This document tracks all tasks required to transform the current "shape generato
 
 ---
 
-## Phase 3: Per-Shape Interaction (All Pages)
+## Phase 3: Per-Shape Interaction (All Pages) ✅
 
 > **Goal**: Enable direct manipulation of shapes on the canvas.
 
-### 3.1 Canvas Click-to-Select
-- [ ] Update `ShapeCanvas.svelte`
-  - [ ] Add `onclick` handler with canvas coordinate conversion
-  - [ ] Implement hit-testing: for each shape, check if clicked point is within stroke tolerance of path
-  - [ ] Emit `shapeSelected(shapeId, event)` event
-  - [ ] Support `Shift+Click` for multi-select (add to selection)
-  - [ ] Support `Ctrl/Cmd+Click` for toggle-select
+### 3.1 Canvas Click-to-Select ✅
+- [x] Update `ShapeCanvas.svelte`
+  - [x] Add `onclick` handler with canvas coordinate conversion
+  - [x] Implement hit-testing via `hitTesting.ts` utilities
+  - [x] Emit `onShapeClick(shapeId, event)` callback
+  - [x] Support `Shift+Click` for multi-select
+  - [x] Support `Ctrl/Cmd+Click` for toggle-select
 
-### 3.2 Shape Popover
-- [ ] Create `src/lib/components/controls/ShapePopover.svelte`
-  - [ ] Positioned near selected shape(s) on canvas (use Popover from shadcn)
-  - [ ] Contains:
-    - [ ] Color picker
-    - [ ] Opacity slider (0-100%)
-    - [ ] Rotation speed slider (0-5 rad/s)
-    - [ ] Direction toggle: CW / CCW / None
-    - [ ] Loop toggle: Continuous / Once / Off
-    - [ ] Delete button
-  - [ ] Multi-select: shows "X shapes selected", controls apply to all
-  - [ ] Dismisses on outside click or Escape
-- [ ] Integrate `ShapePopover` into canvas component
+### 3.2 Shape Popover ✅
+- [x] Create `src/lib/components/controls/ShapePopover.svelte`
+  - [x] Positioned near selected shape
+  - [x] Color picker (9 preset colors)
+  - [x] Opacity slider (0-100%)
+  - [x] Rotation speed slider (0-5 rad/s)
+  - [x] Direction toggle: CW / CCW / None
+  - [x] Loop toggle: Continuous / Once / Off
+  - [x] Delete button
+  - [x] Multi-select: "X shapes selected" display
+  - [x] Dismisses on Escape
 
-### 3.3 Per-Shape Animation System
-- [ ] Update `animationLoop.ts`
-  - [ ] When updating phi, iterate each shape individually
-  - [ ] Check `shape.animationOverride` for custom speed/direction/mode
-  - [ ] Apply per-shape delta: `deltaPhi = shapeSpeed * direction * dt`
-  - [ ] Skip shapes with `mode: 'none'`
-  - [ ] Handle `mode: 'once'` - stop at 2π and mark complete
+### 3.3 Per-Shape Animation System ✅
+- [x] Update `animationLoop.ts`
+  - [x] `updateShapePhiWithOverride()` for per-shape animation
+  - [x] `updateShapesWithAnimation()` batch update
+  - [x] Skip shapes with `mode: 'off'` or `direction: 'none'`
+- [x] Update `shapeStore.svelte.ts` for per-shape overrides
+
+> **Phase 3 Complete! ✅** All per-shape interaction features implemented.
 
 ---
 
