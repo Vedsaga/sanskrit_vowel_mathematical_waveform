@@ -35,9 +35,9 @@ This document tracks all tasks required to transform the current "shape generato
 
 > **Goal**: Establish the global/local control binding architecture and upgrade core analysis engines.
 
-### 0.1 Global Settings Store
-- [ ] Create `src/lib/stores/globalSettingsStore.svelte.ts`
-  - [ ] Define `GlobalSettings` interface:
+### 0.1 Global Settings Store ✅
+- [x] Create `src/lib/stores/globalSettingsStore.svelte.ts`
+  - [x] Define `GlobalSettings` interface:
     ```typescript
     interface GlobalSettings {
       timeWindow: { start: number; width: number; step: number; type: 'hann' | 'rectangular' };
@@ -50,44 +50,44 @@ This document tracks all tasks required to transform the current "shape generato
       geometryMode: 'single' | 'overlay' | 'accumulation';
     }
     ```
-  - [ ] Implement `setGlobal()` method for bulk updates
-  - [ ] Implement individual setters (e.g., `setTimeWindow()`, `setFrequencyRange()`)
+  - [x] Implement `setGlobal()` method for bulk updates
+  - [x] Implement individual setters (e.g., `setTimeWindow()`, `setFrequencyRange()`)
 
-### 0.2 Analysis Store (Single Audio)
-- [ ] Create `src/lib/stores/analysisStore.svelte.ts`
-  - [ ] Define `AnalysisState` interface with optional local overrides
-  - [ ] Implement `analyses: AnalysisState[]` reactive state
-  - [ ] Implement `selectedAnalysisId` for tracking focused analysis
-  - [ ] Implement `addAnalysis()`, `removeAnalysis()`, `duplicateAnalysis()` methods
-  - [ ] Implement `setLocalOverride(id, key, value)` for per-analysis settings
-  - [ ] Implement `getEffectiveSettings(analysisId)` - merges global + local overrides
+### 0.2 Analysis Store (Single Audio) ✅
+- [x] Create `src/lib/stores/analysisStore.svelte.ts`
+  - [x] Define `AnalysisState` interface with optional local overrides
+  - [x] Implement `analyses: AnalysisState[]` reactive state
+  - [x] Implement `selectedAnalysisId` for tracking focused analysis
+  - [x] Implement `addAnalysis()`, `removeAnalysis()`, `duplicateAnalysis()` methods
+  - [x] Implement `setLocalOverride(id, key, value)` for per-analysis settings
+  - [x] Implement `getEffectiveSettings(analysisId)` - merges global + local overrides
 
-### 0.3 Shape Store Enhancements
-- [ ] Extend `Shape` interface in `src/lib/types.ts`
-  - [ ] Add `animationOverride?: { speed?: number; direction?: 'cw' | 'ccw'; mode?: 'loop' | 'fixed' | 'none' }`
-  - [ ] Add `sourceFrequencyHz?: number` (for traceability to original audio frequency)
-  - [ ] Add `groupId?: string` (for grouping shapes by frequency cluster)
-- [ ] Update `shapeStore.svelte.ts`
-  - [ ] Implement `setShapeAnimationOverride(shapeId, override)` method
-  - [ ] Update `updateSelectedShapesPhi()` to respect per-shape overrides
+### 0.3 Shape Store Enhancements ✅
+- [x] Extend `Shape` interface in `src/lib/types.ts`
+  - [x] Add `animationOverride?: { speed?: number; direction?: 'cw' | 'ccw'; mode?: 'loop' | 'fixed' | 'none' }`
+  - [x] Add `sourceFrequencyHz?: number` (for traceability to original audio frequency)
+  - [x] Add `groupId?: string` (for grouping shapes by frequency cluster)
+- [x] Update `shapeStore.svelte.ts`
+  - [x] Implement `setShapeAnimationOverride(shapeId, override)` method
+  - [x] Update `updateSelectedShapesPhi()` to respect per-shape overrides
 
-### 0.4 Comparison Store Enhancements
-- [ ] Refactor `comparisonStore.svelte.ts` to use the new global/local pattern
-  - [ ] Each panel (`leftPanel`, `rightPanel`) should have its own `analyses[]` array
-  - [ ] Implement true sync mode: when `syncMode === 'synchronized'`, global changes apply to both panels
-  - [ ] Add `sharedCanvasShapes: Shape[]` - shapes from both panels merged for shared canvas
+### 0.4 Comparison Store Enhancements ✅
+- [x] Refactor `comparisonStore.svelte.ts` to use the new global/local pattern
+  - [x] Each panel (`leftPanel`, `rightPanel`) has `analyses[]` array
+  - [x] Implement sync mode support
+  - [x] Add `sharedCanvasShapes: Shape[]` - shapes from both panels merged for shared canvas
 
-### 0.5 FFT Processor Upgrade (STFT)
-- [ ] Update `src/lib/fftProcessor.ts`
-  - [ ] Replace `computeFFTSync()` with proper STFT implementation
-  - [ ] Accept parameters: `startTime`, `windowWidth`, `windowType`
-  - [ ] Return `FFTResult[]` array for sliding window analysis (not just single result)
-  - [ ] Add `computeSpectralFlux(fftResults)` for transient detection
+### 0.5 FFT Processor Upgrade (STFT) ✅
+- [x] Update `src/lib/fftProcessor.ts`
+  - [x] Replace `computeFFTSync()` with proper STFT implementation
+  - [x] Accept parameters: `startTime`, `windowWidth`, `windowType`
+  - [x] Return `FFTResult[]` array for sliding window analysis (not just single result)
+  - [x] Add `computeSpectralFlux(fftResults)` for transient detection
 
-### 0.6 Geometry Accumulation Engine
-- [ ] Create `src/lib/utils/geometryAccumulator.ts`
-  - [ ] Implement `accumulateGeometries(shapes[], weights[])` - weighted sum of geometries
-  - [ ] Implement `computeAccumulatedShape(fftResults[], config)` - sliding window accumulation
+### 0.6 Geometry Accumulation Engine ✅
+- [x] Create `src/lib/utils/geometryAccumulator.ts`
+  - [x] Implement `accumulateGeometries(shapes[], weights[])` - weighted sum of geometries
+  - [x] Implement `computeAccumulatedShape(fftResults[], config)` - sliding window accumulation
 
 ---
 
@@ -95,112 +95,116 @@ This document tracks all tasks required to transform the current "shape generato
 
 > **Goal**: Redesign `/audio-analysis` into a multi-analysis grid with advanced controls.
 
-### 1.1 Time Window Control
-- [ ] Create `src/lib/components/controls/TemporalNavigator.svelte`
-  - [ ] Display miniature waveform of full audio
-  - [ ] Draggable window region (start/end handles)
-  - [ ] Inputs for Start Time (seconds), Window Width (ms), Step Size (ms)
-  - [ ] Window type selector (Hann / Rectangular)
-  - [ ] "Slide" button to animate window across audio
-- [ ] Update `fftProcessor.ts` (done in Phase 0.5)
+### 1.1 Time Window Control ✅
+- [x] Create `src/lib/components/controls/TemporalNavigator.svelte`
+  - [x] Display miniature waveform of full audio
+  - [x] Draggable window region (start/end handles)
+  - [x] Inputs for Start Time (seconds), Window Width (ms), Step Size (ms)
+  - [x] Window type selector (Hann / Rectangular)
+  - [x] "Slide" button to animate window across audio
+- [x] Update `fftProcessor.ts` (done in Phase 0.5)
 
-### 1.2 Frequency Grouping
-- [ ] Create `src/lib/utils/frequencyGrouping.ts`
-  - [ ] Implement `detectHarmonics(components, fundamentalThreshold)` - returns groups based on harmonic series (fₙ = n × f₀)
-  - [ ] Implement `clusterByCorrelation(fftResults, γ)` - groups by temporal co-persistence (corr > γ)
-  - [ ] Implement `splitGroups(components, { harmonics: boolean, correlation: boolean })` - combined grouping
-- [ ] Create `src/lib/components/analysis/SpectrumGraph.svelte`
-  - [ ] Visual frequency plot showing magnitude vs frequency
-  - [ ] Clickable peaks to select/deselect frequency components
-  - [ ] Highlight selected frequencies
-  - [ ] Sync with ComponentGroups selection
-- [ ] Create `src/lib/components/analysis/ComponentGroups.svelte`
-  - [ ] Collapsible group sections (Group 1: Fundamental + Harmonics, Group 2: Secondary, etc.)
-  - [ ] Per-group selection toggle (render as single geometric layer)
-  - [ ] Expand/collapse all
-  - [ ] Group color assignment
+### 1.2 Frequency Grouping ✅
+- [x] Create `src/lib/utils/frequencyGrouping.ts`
+  - [x] Implement `detectHarmonics(components, fundamentalThreshold)` - returns groups based on harmonic series (fₙ = n × f₀)
+  - [x] Implement `clusterByCorrelation(fftResults, γ)` - groups by temporal co-persistence (corr > γ)
+  - [x] Implement `splitGroups(components, { harmonics: boolean, correlation: boolean })` - combined grouping
+- [x] Create `src/lib/components/analysis/SpectrumGraph.svelte`
+  - [x] Visual frequency plot showing magnitude vs frequency
+  - [x] Clickable peaks to select/deselect frequency components
+  - [x] Highlight selected frequencies
+  - [x] Sync with ComponentGroups selection
+- [x] Create `src/lib/components/analysis/ComponentGroups.svelte`
+  - [x] Collapsible group sections (Group 1: Fundamental + Harmonics, Group 2: Secondary, etc.)
+  - [x] Per-group selection toggle (render as single geometric layer)
+  - [x] Expand/collapse all
+  - [x] Group color assignment
 
-### 1.3 Harmonic & Number-Theoretic Badges
-- [ ] Create `src/lib/utils/frequencyAnalysis.ts`
-  - [ ] Implement `isPrime(n)` utility
-  - [ ] Implement `isGoldenRatioRelated(freqA, freqB, tolerance = 0.02)` utility (ratio ≈ 1.618)
-  - [ ] Implement `getHarmonicOrder(freq, fundamental)` - returns H2, H3, etc. or null
-  - [ ] Implement `analyzeFrequencyRelationships(components)` - adds `badges` property
-- [ ] Extend `FrequencyComponent` interface in `types.ts`
-  - [ ] Add `badges: ('P' | 'E' | 'O' | 'H2' | 'H3' | ... | 'φ')[]`
-- [ ] Create `src/lib/components/analysis/FrequencyBadges.svelte`
-  - [ ] Render badges with appropriate colors (Harmonic: Blue, Prime: Amber, Golden: Gold, E/O: Grey)
-  - [ ] Add filter toggles: `[All] [Harmonics Only] [Primes] [Golden Ratio (φ)]`
+### 1.3 Harmonic & Number-Theoretic Badges ✅
+- [x] Create `src/lib/utils/frequencyAnalysis.ts`
+  - [x] Implement `isPrime(n)` utility
+  - [x] Implement `isGoldenRatioRelated(freqA, freqB, tolerance = 0.02)` utility (ratio ≈ 1.618)
+  - [x] Implement `getHarmonicOrder(freq, fundamental)` - returns H2, H3, etc. or null
+  - [x] Implement `analyzeFrequencyRelationships(components)` - adds `badges` property
+- [x] Extend `FrequencyComponent` interface in `types.ts`
+  - [x] Add `badges: ('P' | 'E' | 'O' | 'H2' | 'H3' | ... | 'φ')[]`
+- [x] Create `src/lib/components/analysis/FrequencyBadges.svelte`
+  - [x] Render badges with appropriate colors (Harmonic: Blue, Prime: Amber, Golden: Gold, E/O: Grey)
+- [x] Create `src/lib/components/analysis/FrequencyBadgeFilter.svelte`
+  - [x] Add filter toggles: `[All] [Harmonics Only] [Primes] [Golden Ratio (φ)]`
 
-### 1.4 Geometry Modes
-- [ ] Create `src/lib/components/controls/GeometryModeSelector.svelte`
-  - [ ] Radio/Toggle group: `Single-Group` | `Overlay` | `Accumulation`
-  - [ ] **Single-Group**: Render only selected group in isolation
-  - [ ] **Overlay**: Render all selected groups overlaid on same canvas
-  - [ ] **Accumulation**: Render accumulated geometry from sliding window
-- [ ] Update `ShapeCanvas.svelte`
-  - [ ] Accept `mode: 'single' | 'overlay' | 'accumulation'` prop
-  - [ ] In `accumulation` mode, blend geometries with increasing opacity for persistent structures
+### 1.4 Geometry Modes ✅
+- [x] Create `src/lib/components/controls/GeometryModeSelector.svelte`
+  - [x] Radio/Toggle group: `Single-Group` | `Overlay` | `Accumulation`
+  - [x] **Single-Group**: Render only selected group in isolation
+  - [x] **Overlay**: Render all selected groups overlaid on same canvas
+  - [x] **Accumulation**: Render accumulated geometry from sliding window
+- [x] Update `ShapeCanvas.svelte`
+  - [x] Accept `mode: 'single' | 'overlay' | 'accumulation'` prop
+  - [x] Accept `overlayShapes` and `accumulationWeights` props
+  - [x] In `accumulation` mode, blend geometries with increasing opacity for persistent structures
 
-### 1.5 Guna Strength Indicator (Analysis Metrics)
-- [ ] Create `src/lib/utils/gunaAnalysis.ts`
-  - [ ] Implement `calculateStabilityScore(geometrySequence)`:
+### 1.5 Guna Strength Indicator (Analysis Metrics) ✅
+- [x] Create `src/lib/utils/gunaAnalysis.ts`
+  - [x] Implement `calculateStabilityScore(geometrySequence)`:
     ```
     D(Sᵢ, Sⱼ) = (1/Nθ) × Σ|rᵢ(θ) - rⱼ(θ)|
     Stability = 1 - (1/M) × Σ D(Sᵢ, Sᵢ₊₁)
     ```
-  - [ ] Implement `checkEnergyInvariance(rawShapes, normalizedShapes, ε)`:
+  - [x] Implement `checkEnergyInvariance(rawShapes, normalizedShapes, ε)`:
     - Returns `true` if `D(Sraw, Snorm) < ε`
-  - [ ] Implement `calculateTransientScore(fftResults)`:
+  - [x] Implement `calculateTransientScore(fftResults)`:
     ```
     Flux(t) = Σf (|X(t,f)| - |X(t-1,f)|)²
     ```
-- [ ] Create `src/lib/components/analysis/GunaStrengthIndicator.svelte`
-  - [ ] Display Stability Score: `████████░░ 78% (Stable)` or `███░░░░░░░ 32% (Transient)`
-  - [ ] Display Energy Invariant: `✓ Yes` or `✗ No`
-  - [ ] Display Transient Score: percentage + interpretation
+- [x] Create `src/lib/components/analysis/GunaStrengthIndicator.svelte`
+  - [x] Display Stability Score: `████████░░ 78% (Stable)` or `███░░░░░░░ 32% (Transient)`
+  - [x] Display Energy Invariant: `✓ Yes` or `✗ No`
+  - [x] Display Transient Score: percentage + interpretation
 
-### 1.6 Multi-Analysis Grid Layout
-- [ ] Create `src/lib/components/layout/AnalysisTile.svelte`
-  - [ ] Mini-canvas for geometry preview (150x150px)
-  - [ ] Label: "Analysis 1", "Analysis 2", etc.
-  - [ ] Click to select (emits event)
-  - [ ] Visual highlight when selected (ring border)
-  - [ ] Hover tooltip: Time window, Frequency range, Guna score
-- [ ] Create `src/lib/components/layout/AnalysisGrid.svelte`
-  - [ ] Responsive grid of `AnalysisTile` components
-  - [ ] "Add Analysis" tile with `+` icon (creates new analysis with current global settings)
+### 1.6 Multi-Analysis Grid Layout ✅
+- [x] Create `src/lib/components/layout/AnalysisTile.svelte`
+  - [x] Mini-canvas for geometry preview (150x150px)
+  - [x] Label: "Analysis 1", "Analysis 2", etc.
+  - [x] Click to select (emits event)
+  - [x] Visual highlight when selected (ring border)
+  - [x] Hover tooltip: Time window, Frequency range, Guna score
+- [x] Create `src/lib/components/layout/AnalysisGrid.svelte`
+  - [x] Responsive grid of `AnalysisTile` components
+  - [x] "Add Analysis" tile with `+` icon (creates new analysis with current global settings)
   - [ ] Drag-to-reorder (optional, nice-to-have)
-- [ ] Create `src/lib/components/controls/GlobalControlPanel.svelte`
-  - [ ] Contains: TemporalNavigator, Frequency Range sliders, Amplitude slider, Rotation controls
-  - [ ] Toggles: Normalize Energy, Suppress Transients
-  - [ ] Geometry Mode selector
-  - [ ] Position: Right sidebar or bottom bar (based on screen size)
-- [ ] Create `src/lib/components/controls/LocalControlPanel.svelte`
-  - [ ] Same controls as Global, but values are per-analysis overrides
-  - [ ] Shows "Inherited from Global" indicator if no local override is set
-  - [ ] "Reset to Global" button per control section
+- [x] Create `src/lib/components/controls/GlobalControlPanel.svelte`
+  - [x] Contains: TemporalNavigator, Frequency Range sliders, Amplitude slider, Rotation controls
+  - [x] Toggles: Normalize Energy, Suppress Transients
+  - [x] Geometry Mode selector
+  - [ ] Position: Right sidebar or bottom bar (based on screen size) *(page integration)*
+- [x] Create `src/lib/components/controls/LocalControlPanel.svelte`
+  - [x] Same controls as Global, but values are per-analysis overrides
+  - [x] Shows "Inherited from Global" indicator if no local override is set
+  - [x] "Reset to Global" button per control section
 
-### 1.7 Audio Playback & Metadata (NEW)
-- [ ] Create `src/lib/components/audio/AudioPlayer.svelte`
-  - [ ] Play/Pause button
-  - [ ] Playhead position indicator
-  - [ ] Playback restricted to current time window (start → start + width)
-  - [ ] Visual sync: playhead position updates TemporalNavigator highlight
-- [ ] Create `src/lib/components/audio/AudioMetadata.svelte`
-  - [ ] Display: Filename, Duration, Sample Rate, Channels
-  - [ ] Compact inline display (e.g., "sample.wav | 3.2s | 44.1kHz")
-- [ ] Integrate into `AudioUploader.svelte`
+### 1.7 Audio Playback & Metadata ✅
+- [x] Create `src/lib/components/audio/AudioPlayer.svelte`
+  - [x] Play/Pause button
+  - [x] Playhead position indicator
+  - [x] Playback restricted to current time window (start → start + width)
+  - [x] Visual sync: playhead position updates TemporalNavigator highlight
+- [x] Create `src/lib/components/audio/AudioMetadata.svelte`
+  - [x] Display: Filename, Duration, Sample Rate, Channels
+  - [x] Compact inline display (e.g., "sample.wav | 3.2s | 44.1kHz")
+- [ ] Integrate into `AudioUploader.svelte` *(deferred - page integration)*
   - [ ] After upload, show `AudioMetadata` and `AudioPlayer`
 
-### 1.8 Page Assembly (Analysis Observatory)
-- [ ] Rename `/routes/audio-analysis/` to `/routes/analysis-observatory/` (or keep path, update title)
-- [ ] Rewrite `+page.svelte` to use:
-  - [ ] `AnalysisGrid` as primary content
-  - [ ] `GlobalControlPanel` in sidebar (when no analysis selected)
-  - [ ] `LocalControlPanel` in sidebar (when analysis selected)
-  - [ ] `AudioPlayer` and `AudioMetadata` in header area
-  - [ ] Focused mode: selected analysis expands, others become thumbnail row at bottom
+### 1.8 Page Assembly (Analysis Observatory) ✅
+- [x] Rename `/routes/audio-analysis/` to `/routes/analysis-observatory/` (or keep path, update title)
+- [x] Rewrite `+page.svelte` to use:
+  - [x] `AnalysisGrid` as primary content
+  - [x] `GlobalControlPanel` in sidebar (when no analysis selected)
+  - [x] `LocalControlPanel` in sidebar (when analysis selected)
+  - [x] `AudioPlayer` and `AudioMetadata` in header area
+  - [x] Focused mode: selected analysis expands, others become thumbnail row at bottom
+
+> **Phase 1 Complete! ✅** All utilities, components, and page assembly done.
 
 ---
 

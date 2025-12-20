@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import type { Shape, ShapeConfig, Point } from '$lib/types';
-	import { generateShapePoints } from '$lib/shapeEngine';
-	import CanvasSkeleton from './CanvasSkeleton.svelte';
-	import ErrorState from './ErrorState.svelte';
+	import { onMount } from "svelte";
+	import type { Shape, ShapeConfig, Point, GeometryMode } from "$lib/types";
+	import { generateShapePoints } from "$lib/shapeEngine";
+	import CanvasSkeleton from "./CanvasSkeleton.svelte";
+	import ErrorState from "./ErrorState.svelte";
 
 	/**
 	 * ShapeCanvas Component
-	 * 
+	 *
 	 * Renders frequency shapes on an HTML Canvas with proper DPI handling,
 	 * Project Vak theme styling, and multi-shape overlay support.
-	 * 
+	 *
 	 * Requirements: 2.6, 3.1, 3.2, 3.8, 6.1, 6.2, 6.3
 	 */
 
@@ -25,6 +25,10 @@
 		isLoading?: boolean;
 		error?: string | null;
 		onRetry?: () => void;
+		// Phase 1.4: Geometry mode support
+		mode?: GeometryMode;
+		overlayShapes?: Shape[];
+		accumulationWeights?: number[];
 	}
 
 	let {
@@ -36,19 +40,22 @@
 		showGrid = true,
 		isLoading = false,
 		error = null,
-		onRetry
+		onRetry,
+		mode = "single",
+		overlayShapes = [],
+		accumulationWeights = [],
 	}: Props = $props();
 
 	// Canvas element reference
-	let canvas: HTMLCanvasElement;
+	let canvas = $state<HTMLCanvasElement | null>(null);
 	let ctx: CanvasRenderingContext2D | null = null;
-	
+
 	// DPI scaling for crisp rendering on high-DPI displays
 	let dpr = $state(1);
 
 	// Brand color for selected shapes
-	const BRAND_COLOR = '#df728b';
-	const GRID_COLOR = 'var(--color-border)';
+	const BRAND_COLOR = "#df728b";
+	const GRID_COLOR = "var(--color-border)";
 	const GRID_OPACITY = 0.1;
 
 	/**
@@ -56,8 +63,8 @@
 	 */
 	function initCanvas(): void {
 		if (!canvas) return;
-		
-		ctx = canvas.getContext('2d');
+
+		ctx = canvas.getContext("2d");
 		if (!ctx) return;
 
 		// Get device pixel ratio for crisp rendering
@@ -124,7 +131,7 @@
 
 	/**
 	 * Renders a single shape on the canvas
-	 * 
+	 *
 	 * @param shape - The shape to render
 	 * @param isSelected - Whether the shape is currently selected
 	 */
@@ -140,7 +147,7 @@
 			shape.R,
 			config.A,
 			shape.phi,
-			config.resolution
+			config.resolution,
 		);
 
 		if (points.length === 0) return;
@@ -151,16 +158,16 @@
 		ctx.strokeStyle = isSelected ? BRAND_COLOR : shape.color;
 		ctx.globalAlpha = shape.opacity;
 		ctx.lineWidth = isSelected ? shape.strokeWidth + 1 : shape.strokeWidth;
-		ctx.lineCap = 'round';
-		ctx.lineJoin = 'round';
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
 
 		// Enable anti-aliasing (default in canvas)
 		ctx.imageSmoothingEnabled = true;
-		ctx.imageSmoothingQuality = 'high';
+		ctx.imageSmoothingQuality = "high";
 
 		// Draw the shape path
 		ctx.beginPath();
-		
+
 		// Move to first point (centered on canvas)
 		ctx.moveTo(centerX + points[0].x, centerY + points[0].y);
 
@@ -199,6 +206,25 @@
 		// Draw grid first (background)
 		drawGrid();
 
+		// Render based on geometry mode
+		switch (mode) {
+			case "overlay":
+				renderOverlayMode();
+				break;
+			case "accumulation":
+				renderAccumulationMode();
+				break;
+			case "single":
+			default:
+				renderSingleMode();
+				break;
+		}
+	}
+
+	/**
+	 * Single mode: Render shapes normally with selection highlighting
+	 */
+	function renderSingleMode(): void {
 		// Sort shapes: non-selected first, selected last (for z-ordering)
 		const sortedShapes = [...shapes].sort((a, b) => {
 			const aSelected = selectedIds.has(a.id);
@@ -214,6 +240,54 @@
 		}
 	}
 
+	/**
+	 * Overlay mode: Render primary shapes + overlay shapes with visual distinction
+	 */
+	function renderOverlayMode(): void {
+		// Render primary shapes first
+		for (const shape of shapes) {
+			const isSelected = selectedIds.has(shape.id);
+			renderShape(shape, isSelected);
+		}
+
+		// Render overlay shapes with reduced opacity
+		for (const shape of overlayShapes) {
+			const overlayShape = {
+				...shape,
+				opacity: shape.opacity * 0.6,
+			};
+			renderShape(overlayShape, false);
+		}
+	}
+
+	/**
+	 * Accumulation mode: Blend geometries with increasing opacity for persistent structures
+	 */
+	function renderAccumulationMode(): void {
+		if (shapes.length === 0) return;
+
+		// If we have accumulation weights, use them
+		// Otherwise, use equal weights with increasing opacity
+		const weights =
+			accumulationWeights.length === shapes.length
+				? accumulationWeights
+				: shapes.map((_, i) => (i + 1) / shapes.length);
+
+		// Render shapes with weighted opacity
+		for (let i = 0; i < shapes.length; i++) {
+			const shape = shapes[i];
+			const weight = weights[i];
+
+			// More recent shapes (higher weight) are more opaque
+			const accumulatedShape = {
+				...shape,
+				opacity: shape.opacity * (0.2 + 0.8 * weight),
+			};
+
+			renderShape(accumulatedShape, false);
+		}
+	}
+
 	// Initialize canvas on mount
 	onMount(() => {
 		initCanvas();
@@ -225,10 +299,10 @@
 			renderAllShapes();
 		};
 
-		window.addEventListener('resize', handleResize);
+		window.addEventListener("resize", handleResize);
 
 		return () => {
-			window.removeEventListener('resize', handleResize);
+			window.removeEventListener("resize", handleResize);
 		};
 	});
 
@@ -241,6 +315,9 @@
 		width;
 		height;
 		showGrid;
+		mode;
+		overlayShapes;
+		accumulationWeights;
 
 		// Re-render
 		if (ctx) {
@@ -250,11 +327,14 @@
 </script>
 
 {#if error}
-	<div class="shape-canvas-container error-container" style="width: {width}px; height: {height}px;">
+	<div
+		class="shape-canvas-container error-container"
+		style="width: {width}px; height: {height}px;"
+	>
 		<ErrorState
 			title="Canvas Error"
 			message={error}
-			onRetry={onRetry}
+			{onRetry}
 			showRetry={!!onRetry}
 		/>
 	</div>

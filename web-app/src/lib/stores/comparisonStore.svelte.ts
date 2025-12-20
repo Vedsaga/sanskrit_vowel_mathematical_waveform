@@ -9,7 +9,7 @@
  * Requirements: 5.1, 5.2, 5.3
  */
 
-import type { FFTResult, FrequencyComponent, Shape, ShapeConfig } from '../types';
+import type { FFTResult, FrequencyComponent, Shape, ShapeConfig, AnalysisState } from '../types';
 import type { NormalizationStrategy, NormalizationOptions } from '../fftProcessor';
 import { computeFFTSync, extractTopFrequencies } from '../fftProcessor';
 
@@ -25,6 +25,9 @@ export interface PanelAudioState {
 	frequencyComponents: FrequencyComponent[];
 	shapes: Shape[];
 	selectedShapeIds: Set<string>;
+	// Phase 0.4: Support multiple analyses per panel
+	analyses: AnalysisState[];
+	selectedAnalysisId: string | null;
 }
 
 /**
@@ -38,6 +41,9 @@ export interface ComparisonStoreState {
 	normalizationStrategy: NormalizationStrategy;
 	fqRange: { min: number; max: number };
 	config: ShapeConfig;
+	// Phase 0.4: Shared canvas support
+	showSharedCanvas: boolean;
+	sharedCanvasShapes: Shape[];
 }
 
 /**
@@ -60,7 +66,9 @@ function createEmptyPanelState(): PanelAudioState {
 		fftResult: null,
 		frequencyComponents: [],
 		shapes: [],
-		selectedShapeIds: new Set()
+		selectedShapeIds: new Set(),
+		analyses: [],
+		selectedAnalysisId: null
 	};
 }
 
@@ -92,14 +100,51 @@ function createComparisonStore() {
 	// Panel states using $state rune
 	let leftPanel = $state<PanelAudioState>(createEmptyPanelState());
 	let rightPanel = $state<PanelAudioState>(createEmptyPanelState());
-	
+
 	// Sync mode
 	let syncMode = $state<'independent' | 'synchronized'>('independent');
-	
+
 	// Shared settings
 	let normalizationStrategy = $state<NormalizationStrategy>(DEFAULT_STRATEGY);
 	let fqRange = $state<{ min: number; max: number }>({ ...DEFAULT_FQ_RANGE });
 	let config = $state<ShapeConfig>({ ...DEFAULT_CONFIG });
+
+	// Phase 0.4: Shared canvas support
+	let showSharedCanvas = $state<boolean>(false);
+
+	/**
+	 * Computes shared canvas shapes from both panels
+	 */
+	function computeSharedCanvasShapes(): Shape[] {
+		if (!showSharedCanvas) return [];
+
+		// Tag shapes with their source panel
+		const leftShapes = leftPanel.shapes.map(s => ({
+			...s,
+			id: `left-${s.id}`,
+			// Left panel uses original colors
+		}));
+
+		const rightShapes = rightPanel.shapes.map(s => ({
+			...s,
+			id: `right-${s.id}`,
+			// Right panel uses different opacity for visual distinction
+			opacity: Math.max(0.3, s.opacity * 0.7),
+			color: adjustColorForPanel(s.color, 'right')
+		}));
+
+		return [...leftShapes, ...rightShapes];
+	}
+
+	/**
+	 * Adjusts color saturation/hue for right panel distinction
+	 */
+	function adjustColorForPanel(color: string, panel: 'left' | 'right'): string {
+		if (panel === 'left') return color;
+		// Shift hue slightly for right panel shapes
+		// Simple approach: append transparency or use complementary
+		return color; // Keep same for now, distinguish by opacity
+	}
 
 	/**
 	 * Gets normalization options based on current settings
@@ -120,11 +165,11 @@ function createComparisonStore() {
 		const leftFreqs = leftPanel.frequencyComponents.map(c => c.frequencyHz);
 		const rightFreqs = rightPanel.frequencyComponents.map(c => c.frequencyHz);
 		const allFreqs = [...leftFreqs, ...rightFreqs];
-		
+
 		if (allFreqs.length === 0) {
 			return { min: 20, max: 20000 };
 		}
-		
+
 		return {
 			min: Math.min(...allFreqs),
 			max: Math.max(...allFreqs)
@@ -203,18 +248,18 @@ function createComparisonStore() {
 		 */
 		async loadAudio(panel: 'left' | 'right', buffer: AudioBuffer, name: string): Promise<void> {
 			const targetPanel = panel === 'left' ? leftPanel : rightPanel;
-			
+
 			// Update processing state
 			if (panel === 'left') {
 				leftPanel = { ...leftPanel, isProcessing: true, error: null };
 			} else {
 				rightPanel = { ...rightPanel, isProcessing: true, error: null };
 			}
-			
+
 			try {
 				// Compute FFT
 				const fftResult = computeFFTSync(buffer, 2048);
-				
+
 				// Extract frequency components
 				const components = extractTopFrequencies(
 					fftResult,
@@ -222,7 +267,7 @@ function createComparisonStore() {
 					normalizationStrategy,
 					getNormalizationOptions()
 				);
-				
+
 				// Update panel state
 				const newState: PanelAudioState = {
 					audioBuffer: buffer,
@@ -232,9 +277,11 @@ function createComparisonStore() {
 					fftResult,
 					frequencyComponents: components,
 					shapes: [],
-					selectedShapeIds: new Set()
+					selectedShapeIds: new Set(),
+					analyses: [],
+					selectedAnalysisId: null
 				};
-				
+
 				if (panel === 'left') {
 					leftPanel = newState;
 				} else {
@@ -311,7 +358,7 @@ function createComparisonStore() {
 		generateShapes(panel: 'left' | 'right', components: FrequencyComponent[]): void {
 			const targetPanel = panel === 'left' ? leftPanel : rightPanel;
 			const newShapes: Shape[] = [];
-			
+
 			for (const component of components) {
 				const shape: Shape = {
 					id: generateId(),
@@ -325,7 +372,7 @@ function createComparisonStore() {
 				};
 				newShapes.push(shape);
 			}
-			
+
 			if (panel === 'left') {
 				leftPanel = {
 					...leftPanel,
@@ -420,7 +467,7 @@ function createComparisonStore() {
 		 */
 		setNormalizationStrategy(strategy: NormalizationStrategy): void {
 			normalizationStrategy = strategy;
-			
+
 			// Recompute for left panel
 			if (leftPanel.fftResult) {
 				const components = extractTopFrequencies(
@@ -440,7 +487,7 @@ function createComparisonStore() {
 					}))
 				};
 			}
-			
+
 			// Recompute for right panel
 			if (rightPanel.fftResult) {
 				const components = extractTopFrequencies(
