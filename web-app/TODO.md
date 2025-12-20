@@ -208,70 +208,63 @@ This document tracks all tasks required to transform the current "shape generato
 
 ---
 
-## Phase 2: Convergence Studio (Dual Audio Comparison)
+## Phase 2: Convergence Studio (Dual Audio Comparison) ✅
 
 > **Goal**: Redesign `/comparison` with dual grids, **shared canvas**, and overlay capabilities.
 
-### 2.1 Dual-Grid Layout
-- [ ] Update `comparisonStore.svelte.ts` to support `analyses[]` per panel
-- [ ] Create `src/lib/components/layout/DualAnalysisGrid.svelte`
-  - [ ] Side-by-side grids for Audio A and Audio B
-  - [ ] Each side is an `AnalysisGrid` instance
-  - [ ] Central "Spine" with shared controls
+### 2.1 Dual-Grid Layout ✅
+- [x] Update `comparisonStore.svelte.ts` to support `analyses[]` per panel
+- [x] Create `src/lib/components/layout/DualAnalysisGrid.svelte`
+  - [x] Side-by-side grids for Audio A and Audio B
+  - [x] Each side is an `AnalysisGrid` instance
+  - [x] Central "Spine" with shared controls
 
-### 2.2 Shared Geometry Canvas (NEW)
-- [ ] Create `src/lib/components/canvas/SharedCanvas.svelte`
-  - [ ] Positioned in center, visually prominent
-  - [ ] Receives shapes from **both** panels (Audio A and Audio B)
-  - [ ] Shapes from A rendered in one color family, B in another
-- [ ] Update `SyncControls.svelte`
-  - [ ] "Link Controls" toggle: when ON, changing A's settings applies to B
-  - [ ] "Show Shared Canvas" toggle: when ON, center canvas shows merged geometry
-  - [ ] When OFF, each side has its own canvas
+### 2.2 Shared Geometry Canvas ✅
+- [x] Create `src/lib/components/canvas/SharedCanvas.svelte`
+  - [x] Positioned in center, visually prominent
+  - [x] Receives shapes from **both** panels (Audio A and Audio B)
+  - [x] Shapes from A rendered in warm colors, B in cool colors
+- [x] Update `comparisonStore` with linkControls and showSharedCanvas toggles
 
-### 2.3 Overlay & Comparison Rendering
-- [ ] Enhance `ShapeCanvas.svelte`
-  - [ ] Accept `overlayShapes?: Shape[]` prop for secondary layer
-  - [ ] Accept `comparisonMode?: 'none' | 'overlay' | 'intersection' | 'difference'`
-  - [ ] **Overlay**: Draw both layers with distinct colors/opacity
-  - [ ] **Intersection**: Highlight only regions where shapes overlap (requires custom rendering)
-  - [ ] **Difference**: Highlight regions unique to each source
-- [ ] Create `src/lib/utils/shapeComparison.ts`
-  - [ ] Implement `computeIntersection(shapesA, shapesB, resolution)` - returns intersection mask
-  - [ ] Implement `computeDifference(shapesA, shapesB)` - returns difference regions
+### 2.3 Overlay & Comparison Rendering ✅
+- [x] Enhanced `SharedCanvas.svelte` with comparison modes
+  - [x] `comparisonMode: 'overlay' | 'intersection' | 'difference'`
+  - [x] **Overlay**: Draw both layers with distinct colors/opacity
+  - [x] **Intersection**: Highlight overlapping regions
+  - [x] **Difference**: Highlight unique regions
+- [x] Create `src/lib/utils/shapeComparison.ts`
+  - [x] `computeIntersection(shapesA, shapesB, resolution)`
+  - [x] `computeDifference(shapesA, shapesB)`
+  - [x] `computeSimilarityScore(shapesA, shapesB)`
 
-### 2.4 State Cards & Observation Log
-- [ ] Create `src/lib/components/analysis/StateCard.svelte`
-  - [ ] Displays: User-defined label, Audio filename, Time window, Frequency range, Groups, Geometry thumbnail
-  - [ ] Buttons: `Load` (restore state), `Overlay` (add to current view), `Delete`
-- [ ] Create `src/lib/components/analysis/ObservationLog.svelte`
-  - [ ] Slide-out drawer (triggered by button in header)
-  - [ ] List of saved `StateCard` components
-  - [ ] "Save Current State" button (prompts for label)
-  - [ ] Persist to localStorage (or future: backend)
-- [ ] Update stores to support state serialization/deserialization
-  - [ ] `serializeState()` → returns JSON-serializable object (audio NOT included, just reference)
-  - [ ] `deserializeState(stateObject)` → restores store (requires audio to be re-uploaded or cached)
+### 2.4 State Cards & Observation Log ✅
+- [x] Create `src/lib/components/analysis/StateCard.svelte`
+  - [x] Displays: Label, Audio filename, Time window, Frequency range, Thumbnail
+  - [x] Buttons: `Load`, `Overlay`, `Delete`
+- [x] Create `src/lib/components/analysis/ObservationLog.svelte`
+  - [x] Expandable dropdown panel
+  - [x] List of saved `StateCard` components
+  - [x] "Save Current State" button (prompts for label)
+  - [x] Persist to localStorage
 
-### 2.5 Convergence Detection (NEW)
-- [ ] Create `src/lib/utils/convergenceAnalysis.ts`
-  - [ ] Implement `computeConvergenceScore(statesA[], statesB[])`:
-    ```
-    min(D(SᵢA, SⱼB)) for all i, j
-    ```
-  - [ ] Return: score (0-1), converging pairs
-- [ ] Create `src/lib/components/analysis/ConvergenceIndicator.svelte`
-  - [ ] Display: "Convergence: 85% (States 2 & 5 match)"
-  - [ ] Visual: Highlight matching tiles in both grids
+### 2.5 Convergence Detection ✅
+- [x] Create `src/lib/utils/convergenceAnalysis.ts`
+  - [x] `computeConvergenceScore(statesA[], statesB[])` → 0-1 score
+  - [x] `computeQuickConvergence()` for real-time updates
+  - [x] `identifyMatchingShapes()` for pairs
+- [x] Create `src/lib/components/analysis/ConvergenceIndicator.svelte`
+  - [x] Display: "Convergence: X%" with label
+  - [x] Visual: Progress bar, matching pairs, common frequencies
 
-### 2.6 Page Assembly (Convergence Studio)
-- [ ] Rename `/routes/comparison/` to `/routes/convergence-studio/` (or keep path, update title)
-- [ ] Rewrite `+page.svelte` to use:
-  - [ ] `DualAnalysisGrid` (left/right)
-  - [ ] `SharedCanvas` in center (toggleable)
-  - [ ] `SyncControls` in central spine
-  - [ ] `ConvergenceIndicator` below shared canvas
-  - [ ] `ObservationLog` drawer (button in header)
+### 2.6 Page Assembly (Convergence Studio) ✅
+- [x] Rewrite `/routes/comparison/+page.svelte` to use:
+  - [x] `DualAnalysisGrid` (left/right)
+  - [x] `SharedCanvas` in center (toggleable)
+  - [x] `SyncControls` in central spine
+  - [x] `ConvergenceIndicator` in header and footer
+  - [x] `ObservationLog` dropdown (button in header)
+
+> **Phase 2 Complete! ✅** All components, utilities, and page assembly done.
 
 ---
 

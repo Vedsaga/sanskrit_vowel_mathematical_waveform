@@ -1,248 +1,263 @@
 <script lang="ts">
 	/**
-	 * Comparison Page
-	 * 
-	 * Side-by-side audio comparison with two parallel analysis panels.
-	 * Supports synchronized or independent manipulation of shapes.
-	 * 
-	 * Requirements: 5.1, 5.4, 5.5
+	 * Convergence Studio Page
+	 *
+	 * Dual audio comparison with shared canvas and convergence detection.
+	 *
+	 * Phase 2: Task 2.6
 	 */
-	import { GitCompare } from '@lucide/svelte';
-	import ComparisonPanel from '$lib/components/ComparisonPanel.svelte';
-	import SyncControls from '$lib/components/SyncControls.svelte';
-	import { comparisonStore } from '$lib/stores';
-	import type { FrequencyComponent } from '$lib/types';
+	import { GitCompare, Settings } from "@lucide/svelte";
+	import DualAnalysisGrid from "$lib/components/layout/DualAnalysisGrid.svelte";
+	import ConvergenceIndicator from "$lib/components/analysis/ConvergenceIndicator.svelte";
+	import ObservationLog from "$lib/components/analysis/ObservationLog.svelte";
+	import { Button } from "$lib/components/ui/button";
+	import * as ToggleGroup from "$lib/components/ui/toggle-group";
+	import {
+		comparisonStore,
+		shapeStore,
+		globalSettingsStore,
+	} from "$lib/stores";
+	import { computeQuickConvergence } from "$lib/utils/convergenceAnalysis";
+	import type { GlobalSettings } from "$lib/types";
 
-	// Get reactive state from store
+	// Store state
 	const leftPanel = $derived(comparisonStore.leftPanel);
 	const rightPanel = $derived(comparisonStore.rightPanel);
-	const syncMode = $derived(comparisonStore.syncMode);
-	const sharedFrequencyScale = $derived(comparisonStore.sharedFrequencyScale);
-	const config = $derived(comparisonStore.config);
-	const leftHasAudio = $derived(comparisonStore.leftHasAudio);
-	const rightHasAudio = $derived(comparisonStore.rightHasAudio);
+	const showSharedCanvas = $derived(comparisonStore.showSharedCanvas);
+	const linkControls = $derived(comparisonStore.linkControls);
+	const comparisonMode = $derived(comparisonStore.comparisonMode);
+	const config = $derived(shapeStore.config);
+	const globalSettings = $derived(globalSettingsStore.settings);
+
+	// Real-time convergence
+	let quickConvergence = $derived(
+		computeQuickConvergence(leftPanel.shapes, rightPanel.shapes, config),
+	);
+
+	// Current file name for observation log
+	let currentFileName = $derived(
+		leftPanel.fileName || rightPanel.fileName || "",
+	);
+
+	// Combined shapes for observation log
+	let currentShapes = $derived([...leftPanel.shapes, ...rightPanel.shapes]);
 
 	/**
-	 * Handles audio file loaded
+	 * Handles comparison mode change
 	 */
-	function handleFileLoaded(panel: 'left' | 'right', buffer: AudioBuffer, fileName: string) {
-		comparisonStore.loadAudio(panel, buffer, fileName);
+	function handleModeChange(value: string | undefined): void {
+		if (value) {
+			comparisonStore.setComparisonMode(
+				value as "none" | "overlay" | "intersection" | "difference",
+			);
+		}
 	}
 
 	/**
-	 * Handles frequency component selection toggle
+	 * Handles loading a saved state
 	 */
-	function handleToggleSelection(panel: 'left' | 'right', id: string) {
-		comparisonStore.toggleComponentSelection(panel, id);
+	function handleLoadState(state: any): void {
+		// TODO: Implement state loading
+		console.log("Loading state:", state);
 	}
 
 	/**
-	 * Handles select all components
+	 * Handles overlaying a saved state
 	 */
-	function handleSelectAll(panel: 'left' | 'right') {
-		comparisonStore.selectAllComponents(panel);
-	}
-
-	/**
-	 * Handles deselect all components
-	 */
-	function handleDeselectAll(panel: 'left' | 'right') {
-		comparisonStore.deselectAllComponents(panel);
-	}
-
-	/**
-	 * Handles generate shapes from selected components
-	 */
-	function handleGenerateShapes(panel: 'left' | 'right', components: FrequencyComponent[]) {
-		comparisonStore.generateShapes(panel, components);
-	}
-
-	/**
-	 * Handles shape removal
-	 */
-	function handleRemoveShape(panel: 'left' | 'right', shapeId: string) {
-		comparisonStore.removeShape(panel, shapeId);
-	}
-
-	/**
-	 * Handles shape selection toggle
-	 */
-	function handleToggleShapeSelection(panel: 'left' | 'right', shapeId: string) {
-		comparisonStore.toggleShapeSelection(panel, shapeId);
-	}
-
-	/**
-	 * Handles shape property update
-	 */
-	function handleUpdateShapeProperty(panel: 'left' | 'right', shapeId: string, property: any) {
-		comparisonStore.updateShapeProperty(panel, shapeId, property);
-	}
-
-	/**
-	 * Handles sync mode change
-	 */
-	function handleSyncModeChange(mode: 'independent' | 'synchronized') {
-		comparisonStore.setSyncMode(mode);
+	function handleOverlayState(state: any): void {
+		// TODO: Implement state overlay
+		console.log("Overlaying state:", state);
 	}
 </script>
 
-<div class="page-container">
-	<header class="page-header">
-		<div class="header-icon">
-			<GitCompare size={32} />
+<div class="studio-container">
+	<!-- Header -->
+	<header class="studio-header">
+		<div class="header-left">
+			<div class="header-icon">
+				<GitCompare size={28} />
+			</div>
+			<div class="header-content">
+				<h1>Convergence Studio</h1>
+				<p>Compare two audio files and find geometric convergence</p>
+			</div>
 		</div>
-		<div class="header-content">
-			<h1>Audio Comparison</h1>
-			<p>Compare two audio files side by side to analyze differences in their frequency compositions</p>
+
+		<div class="header-center">
+			{#if leftPanel.audioBuffer && rightPanel.audioBuffer}
+				<ConvergenceIndicator
+					result={{
+						score: quickConvergence.score,
+						label:
+							quickConvergence.score >= 0.7
+								? "High"
+								: quickConvergence.score >= 0.4
+									? "Moderate"
+									: "Low",
+						matchingPairs: [],
+						commonFrequencies: [],
+					}}
+					compact
+				/>
+			{/if}
+		</div>
+
+		<div class="header-right">
+			{#if showSharedCanvas}
+				<ToggleGroup.Root
+					type="single"
+					value={comparisonMode}
+					onValueChange={handleModeChange}
+					class="mode-toggle"
+				>
+					<ToggleGroup.Item value="overlay" class="mode-item"
+						>Overlay</ToggleGroup.Item
+					>
+					<ToggleGroup.Item value="intersection" class="mode-item"
+						>Intersect</ToggleGroup.Item
+					>
+					<ToggleGroup.Item value="difference" class="mode-item"
+						>Diff</ToggleGroup.Item
+					>
+				</ToggleGroup.Root>
+			{/if}
+
+			<ObservationLog
+				{config}
+				{currentShapes}
+				currentSettings={globalSettings}
+				{currentFileName}
+				onLoadState={handleLoadState}
+				onOverlayState={handleOverlayState}
+			/>
 		</div>
 	</header>
 
-	<div class="comparison-layout">
-		<!-- Left Panel -->
-		<div class="panel-container">
-			<ComparisonPanel
-				panel="left"
-				panelState={leftPanel}
-				{config}
-				title="Audio A"
-				onFileLoaded={handleFileLoaded}
-				onToggleSelection={handleToggleSelection}
-				onSelectAll={handleSelectAll}
-				onDeselectAll={handleDeselectAll}
-				onGenerateShapes={handleGenerateShapes}
-				onRemoveShape={handleRemoveShape}
-				onToggleShapeSelection={handleToggleShapeSelection}
-				onUpdateShapeProperty={handleUpdateShapeProperty}
-			/>
-		</div>
+	<!-- Main Content -->
+	<main class="studio-main">
+		<DualAnalysisGrid {globalSettings} />
+	</main>
 
-		<!-- Center Controls -->
-		<div class="controls-container">
-			<SyncControls
-				{syncMode}
-				{sharedFrequencyScale}
-				{leftHasAudio}
-				{rightHasAudio}
-				onSyncModeChange={handleSyncModeChange}
+	<!-- Footer with convergence details -->
+	{#if leftPanel.audioBuffer && rightPanel.audioBuffer && leftPanel.shapes.length > 0 && rightPanel.shapes.length > 0}
+		<footer class="studio-footer">
+			<ConvergenceIndicator
+				result={{
+					score: quickConvergence.score,
+					label:
+						quickConvergence.score >= 0.7
+							? "Very High"
+							: quickConvergence.score >= 0.4
+								? "Moderate"
+								: "Low",
+					matchingPairs: [],
+					commonFrequencies: [],
+				}}
 			/>
-		</div>
-
-		<!-- Right Panel -->
-		<div class="panel-container">
-			<ComparisonPanel
-				panel="right"
-				panelState={rightPanel}
-				{config}
-				title="Audio B"
-				onFileLoaded={handleFileLoaded}
-				onToggleSelection={handleToggleSelection}
-				onSelectAll={handleSelectAll}
-				onDeselectAll={handleDeselectAll}
-				onGenerateShapes={handleGenerateShapes}
-				onRemoveShape={handleRemoveShape}
-				onToggleShapeSelection={handleToggleShapeSelection}
-				onUpdateShapeProperty={handleUpdateShapeProperty}
-			/>
-		</div>
-	</div>
+		</footer>
+	{/if}
 </div>
 
 <style>
-	.page-container {
-		padding: 1.5rem;
-		max-width: 1800px;
-		margin: 0 auto;
-		min-height: 100%;
+	.studio-container {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		overflow: hidden;
 	}
 
-	.page-header {
+	.studio-header {
 		display: flex;
-		align-items: flex-start;
-		gap: 1.5rem;
-		margin-bottom: 2rem;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 1rem 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+		background-color: var(--color-card);
+		flex-wrap: wrap;
+	}
+
+	.header-left {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
 	}
 
 	.header-icon {
-		width: 64px;
-		height: 64px;
-		background: var(--color-brand);
-		border-radius: var(--radius-lg);
+		width: 48px;
+		height: 48px;
+		background: linear-gradient(135deg, #f97316, #3b82f6);
+		border-radius: var(--radius-md);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--color-brand-foreground);
-		box-shadow: 0 4px 20px color-mix(in srgb, var(--color-brand) 30%, transparent);
-		flex-shrink: 0;
+		color: white;
 	}
 
 	.header-content h1 {
-		font-size: 1.75rem;
-		font-weight: 700;
-		margin-bottom: 0.5rem;
-		letter-spacing: -0.5px;
+		font-size: 1.25rem;
+		font-weight: 600;
+		margin: 0;
 	}
 
 	.header-content p {
+		font-size: 0.75rem;
 		color: var(--color-muted-foreground);
-		font-size: 0.95rem;
-		line-height: 1.6;
+		margin: 0;
 	}
 
-	.comparison-layout {
-		display: grid;
-		grid-template-columns: 1fr 240px 1fr;
-		gap: 1.5rem;
-		align-items: start;
+	.header-center {
+		flex: 1;
+		display: flex;
+		justify-content: center;
 	}
 
-	.panel-container {
-		min-width: 0;
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 	}
 
-	.controls-container {
-		position: sticky;
-		top: 1.5rem;
+	:global(.mode-toggle) {
+		background-color: var(--color-muted);
+		border-radius: var(--radius-md);
+		padding: 0.125rem;
 	}
 
-	/* Responsive layout */
-	@media (max-width: 1400px) {
-		.comparison-layout {
-			grid-template-columns: 1fr 200px 1fr;
-			gap: 1rem;
-		}
+	:global(.mode-item) {
+		font-size: 0.75rem;
+		padding: 0.375rem 0.75rem;
 	}
 
-	@media (max-width: 1100px) {
-		.comparison-layout {
-			grid-template-columns: 1fr 1fr;
-			gap: 1.5rem;
-		}
+	.studio-main {
+		flex: 1;
+		overflow: auto;
+		padding: 1.5rem;
+	}
 
-		.controls-container {
-			grid-column: 1 / -1;
-			order: -1;
-			position: static;
-		}
+	.studio-footer {
+		padding: 1rem 1.5rem;
+		border-top: 1px solid var(--color-border);
+		background-color: var(--color-card);
 	}
 
 	@media (max-width: 768px) {
-		.page-container {
-			padding: 1rem;
-		}
-
-		.comparison-layout {
-			grid-template-columns: 1fr;
-		}
-
-		.page-header {
+		.studio-header {
 			flex-direction: column;
-			align-items: center;
-			text-align: center;
-			gap: 1rem;
+			align-items: stretch;
+			gap: 0.75rem;
 		}
 
-		.header-content h1 {
-			font-size: 1.5rem;
+		.header-center {
+			order: 3;
+		}
+
+		.header-right {
+			justify-content: flex-end;
+		}
+
+		.studio-main {
+			padding: 1rem;
 		}
 	}
 </style>

@@ -112,6 +112,12 @@ function createComparisonStore() {
 	// Phase 0.4: Shared canvas support
 	let showSharedCanvas = $state<boolean>(false);
 
+	// Phase 2.1: Control linking
+	let linkControls = $state<boolean>(false);
+
+	// Phase 2.3: Comparison mode
+	let comparisonMode = $state<'none' | 'overlay' | 'intersection' | 'difference'>('overlay');
+
 	/**
 	 * Computes shared canvas shapes from both panels
 	 */
@@ -209,6 +215,15 @@ function createComparisonStore() {
 		},
 		get config() {
 			return config;
+		},
+		get showSharedCanvas() {
+			return showSharedCanvas;
+		},
+		get linkControls() {
+			return linkControls;
+		},
+		get comparisonMode() {
+			return comparisonMode;
 		},
 
 		/**
@@ -521,6 +536,34 @@ function createComparisonStore() {
 		 */
 		setConfig(newConfig: Partial<ShapeConfig>): void {
 			config = { ...config, ...newConfig };
+		},
+
+		/**
+		 * Sets the showSharedCanvas flag
+		 */
+		setShowSharedCanvas(show: boolean): void {
+			showSharedCanvas = show;
+		},
+
+		/**
+		 * Sets the linkControls flag
+		 */
+		setLinkControls(linked: boolean): void {
+			linkControls = linked;
+		},
+
+		/**
+		 * Sets the comparison mode
+		 */
+		setComparisonMode(mode: 'none' | 'overlay' | 'intersection' | 'difference'): void {
+			comparisonMode = mode;
+		},
+
+		/**
+		 * Returns computed shapes for shared canvas
+		 */
+		get sharedCanvasShapes(): Shape[] {
+			return computeSharedCanvasShapes();
 		},
 
 		/**
