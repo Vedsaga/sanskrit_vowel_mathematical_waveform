@@ -23,6 +23,20 @@ import parselmouth
 from parselmouth.praat import call
 from pathlib import Path
 
+try:
+    import seaborn as sns
+    HAS_SEABORN = True
+except ImportError:
+    HAS_SEABORN = False
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+    def tqdm(iterable, **kwargs):
+        return iterable
+
 # Configure matplotlib to use Noto Sans Devanagari for proper script rendering
 DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
 if os.path.exists(DEVANAGARI_FONT_PATH):
@@ -48,10 +62,12 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
         - f1_mean, f2_mean, f3_mean: Mean formant frequencies
         - f1_std, f2_std, f3_std: Standard deviations
         - formant_values: Time-series of formant values
+        - duration: Audio duration in seconds
     """
     try:
         # Load the audio file with Praat
         sound = parselmouth.Sound(audio_path)
+        duration = sound.get_total_duration()
         
         # Create a Formant object
         formant = call(sound, "To Formant (burg)",
@@ -65,12 +81,21 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
         n_frames = call(formant, "Get number of frames")
         
         # Extract formant values for each frame
+        # Use middle 50% to avoid onset/offset noise
+        start_frame = max(1, int(n_frames * 0.25))
+        end_frame = min(n_frames, int(n_frames * 0.75))
+        
+        # Fallback to full range if audio is very short
+        if end_frame - start_frame < 3:
+            start_frame = 1
+            end_frame = n_frames
+        
         f1_values = []
         f2_values = []
         f3_values = []
         time_values = []
         
-        for i in range(1, n_frames + 1):
+        for i in range(start_frame, end_frame + 1):
             t = call(formant, "Get time from frame number", i)
             f1 = call(formant, "Get value at time", 1, t, "Hertz", "Linear")
             f2 = call(formant, "Get value at time", 2, t, "Hertz", "Linear")
@@ -105,7 +130,8 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
             'f2_values': f2_arr,
             'f3_values': f3_arr,
             'time_values': np.array(time_values),
-            'n_frames': len(f1_values)
+            'n_frames': len(f1_values),
+            'duration': duration
         }
         
     except Exception as e:
@@ -181,6 +207,10 @@ def compute_formant_ratios(formant_data: dict) -> dict:
         'f1_f3_ratio_median': f1_f3_ratio_med,
         'log_f2_f1_median': log_f2_f1_med,
         'log_f3_f2_median': log_f3_f2_med,
+        
+        # F3-F2 difference (useful for retroflexion detection)
+        'f3_f2_diff_mean': f3_mean - f2_mean,
+        'f3_f2_diff_median': f3_med - f2_med,
         
         # Per-frame ratio statistics
         'frame_f1_f2_ratios': frame_f1_f2_ratios,
@@ -470,6 +500,521 @@ def create_comparison_plots(result1: dict, result2: dict, output_dir: str):
     print(f"Visualization saved to: {plot_path}")
 
 
+def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str) -> pd.DataFrame:
+    """
+    Compare all audio files in a folder against a pinned reference file.
+    
+    Args:
+        folder_path: Path to folder containing audio files
+        reference_file: Path to the reference (pinned) file to compare against
+        output_dir: Directory to save results
+    
+    Returns:
+        DataFrame with all comparison results
+    """
+    import glob
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Find all wav files in the folder
+    wav_files = glob.glob(os.path.join(folder_path, '*.wav'))
+    
+    if not wav_files:
+        print(f"Error: No .wav files found in {folder_path}")
+        return None
+    
+    # Analyze the reference file first
+    print(f"\n{'='*60}")
+    print(f"REFERENCE FILE: {os.path.basename(reference_file)}")
+    print(f"{'='*60}")
+    
+    ref_result = analyze_audio_file(reference_file)
+    if ref_result is None:
+        print(f"Error: Could not analyze reference file: {reference_file}")
+        return None
+    
+    # Compare each file against the reference
+    all_comparisons = []
+    successful_results = []
+    
+    for wav_file in wav_files:
+        # Skip if it's the reference file itself
+        if os.path.abspath(wav_file) == os.path.abspath(reference_file):
+            continue
+        
+        print(f"\nAnalyzing: {os.path.basename(wav_file)}")
+        result = analyze_audio_file(wav_file)
+        
+        if result is None:
+            print(f"  ⚠ Skipped (could not extract formants)")
+            continue
+        
+        successful_results.append(result)
+        
+        # Compute comparison metrics
+        metrics = [
+            'f1_mean', 'f2_mean', 'f3_mean',
+            'f1_f2_ratio_mean', 'f2_f3_ratio_mean', 'f1_f3_ratio_mean',
+            'log_f2_f1_mean', 'log_f3_f2_mean',
+            'f1_f2_ratio_median', 'f2_f3_ratio_median', 'f1_f3_ratio_median',
+            'log_f2_f1_median', 'log_f3_f2_median',
+        ]
+        
+        comparison = {'filename': os.path.basename(wav_file)}
+        
+        for metric in metrics:
+            val_ref = ref_result.get(metric, np.nan)
+            val_file = result.get(metric, np.nan)
+            diff = abs(val_ref - val_file)
+            pct_diff = (diff / ((val_ref + val_file) / 2)) * 100 if (val_ref + val_file) != 0 else np.nan
+            
+            comparison[f'{metric}'] = val_file
+            comparison[f'{metric}_diff'] = diff
+            comparison[f'{metric}_pct_diff'] = pct_diff
+        
+        all_comparisons.append(comparison)
+    
+    if not all_comparisons:
+        print("Error: No files could be analyzed")
+        return None
+    
+    # Create results DataFrame
+    df = pd.DataFrame(all_comparisons)
+    
+    # Save detailed results
+    csv_path = os.path.join(output_dir, 'batch_comparison_detailed.csv')
+    df.to_csv(csv_path, index=False)
+    print(f"\nDetailed results saved to: {csv_path}")
+    
+    # Create summary statistics
+    summary_metrics = ['f1_f2_ratio_mean', 'f2_f3_ratio_mean', 'f1_f3_ratio_mean',
+                       'log_f2_f1_mean', 'log_f3_f2_mean']
+    
+    summary_data = []
+    for metric in summary_metrics:
+        pct_col = f'{metric}_pct_diff'
+        if pct_col in df.columns:
+            summary_data.append({
+                'metric': metric,
+                'mean_pct_diff': df[pct_col].mean(),
+                'std_pct_diff': df[pct_col].std(),
+                'min_pct_diff': df[pct_col].min(),
+                'max_pct_diff': df[pct_col].max(),
+                'median_pct_diff': df[pct_col].median(),
+            })
+    
+    summary_df = pd.DataFrame(summary_data)
+    summary_path = os.path.join(output_dir, 'batch_comparison_summary.csv')
+    summary_df.to_csv(summary_path, index=False)
+    print(f"Summary statistics saved to: {summary_path}")
+    
+    # Create batch visualization
+    create_batch_plots(ref_result, successful_results, df, output_dir)
+    
+    return df
+
+
+def create_batch_plots(ref_result: dict, all_results: list, comparison_df: pd.DataFrame, output_dir: str):
+    """Create visualization for batch comparison."""
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.patch.set_facecolor('#111111')
+    
+    ref_name = os.path.basename(ref_result['filename'])
+    
+    # Colors
+    ref_color = '#FFD93D'  # Gold for reference
+    other_color = '#4ECDC4'  # Teal for others
+    
+    # 1. F1/F2 Ratio Distribution
+    ax = axes[0, 0]
+    ax.set_facecolor('#1a1a1a')
+    
+    ref_ratio = ref_result['f1_f2_ratio_mean']
+    other_ratios = [r['f1_f2_ratio_mean'] for r in all_results]
+    
+    ax.axhline(y=ref_ratio, color=ref_color, linestyle='--', linewidth=2, label=f'Reference: {ref_name}')
+    ax.scatter(range(len(other_ratios)), other_ratios, c=other_color, s=50, alpha=0.7, label='Other files')
+    
+    ax.set_xlabel('File Index', color='#EAEAEA')
+    ax.set_ylabel('F1/F2 Ratio', color='#EAEAEA')
+    ax.set_title('F1/F2 Ratio vs Reference', color='#EAEAEA', fontweight='bold')
+    ax.tick_params(colors='#EAEAEA')
+    ax.legend(facecolor='#1a1a1a', edgecolor='#333', labelcolor='#EAEAEA')
+    ax.grid(True, alpha=0.2, color='#444')
+    ax.spines['bottom'].set_color('#333')
+    ax.spines['left'].set_color('#333')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # 2. F2/F3 Ratio Distribution
+    ax = axes[0, 1]
+    ax.set_facecolor('#1a1a1a')
+    
+    ref_ratio = ref_result['f2_f3_ratio_mean']
+    other_ratios = [r['f2_f3_ratio_mean'] for r in all_results]
+    
+    ax.axhline(y=ref_ratio, color=ref_color, linestyle='--', linewidth=2, label=f'Reference: {ref_name}')
+    ax.scatter(range(len(other_ratios)), other_ratios, c=other_color, s=50, alpha=0.7, label='Other files')
+    
+    ax.set_xlabel('File Index', color='#EAEAEA')
+    ax.set_ylabel('F2/F3 Ratio', color='#EAEAEA')
+    ax.set_title('F2/F3 Ratio vs Reference', color='#EAEAEA', fontweight='bold')
+    ax.tick_params(colors='#EAEAEA')
+    ax.legend(facecolor='#1a1a1a', edgecolor='#333', labelcolor='#EAEAEA')
+    ax.grid(True, alpha=0.2, color='#444')
+    ax.spines['bottom'].set_color('#333')
+    ax.spines['left'].set_color('#333')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # 3. Percent Difference Boxplot
+    ax = axes[1, 0]
+    ax.set_facecolor('#1a1a1a')
+    
+    pct_diff_cols = ['f1_f2_ratio_mean_pct_diff', 'f2_f3_ratio_mean_pct_diff', 
+                     'f1_f3_ratio_mean_pct_diff', 'log_f2_f1_mean_pct_diff', 'log_f3_f2_mean_pct_diff']
+    pct_diff_labels = ['F1/F2', 'F2/F3', 'F1/F3', 'log(F2/F1)', 'log(F3/F2)']
+    
+    box_data = [comparison_df[col].dropna().values for col in pct_diff_cols if col in comparison_df.columns]
+    
+    bp = ax.boxplot(box_data, patch_artist=True, labels=pct_diff_labels[:len(box_data)])
+    for patch in bp['boxes']:
+        patch.set_facecolor(other_color)
+        patch.set_alpha(0.7)
+    for element in ['whiskers', 'fliers', 'means', 'medians', 'caps']:
+        for item in bp[element]:
+            item.set_color('#EAEAEA')
+    
+    ax.set_xlabel('Ratio Type', color='#EAEAEA')
+    ax.set_ylabel('% Difference from Reference', color='#EAEAEA')
+    ax.set_title('Distribution of % Differences', color='#EAEAEA', fontweight='bold')
+    ax.tick_params(colors='#EAEAEA')
+    ax.spines['bottom'].set_color('#333')
+    ax.spines['left'].set_color('#333')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # 4. Summary Statistics
+    ax = axes[1, 1]
+    ax.set_facecolor('#1a1a1a')
+    ax.axis('off')
+    
+    n_files = len(all_results)
+    
+    # Calculate stats
+    stats_lines = []
+    for col, label in zip(pct_diff_cols, pct_diff_labels):
+        if col in comparison_df.columns:
+            mean_diff = comparison_df[col].mean()
+            std_diff = comparison_df[col].std()
+            stats_lines.append(f"{label}: {mean_diff:.2f}% ± {std_diff:.2f}%")
+    
+    summary_text = f"""
+    BATCH COMPARISON SUMMARY
+    ========================
+    
+    Reference: {ref_name}
+    Files analyzed: {n_files}
+    
+    AVERAGE % DIFFERENCE FROM REFERENCE:
+    ────────────────────────────────────
+    {chr(10).join(f'    {line}' for line in stats_lines)}
+    
+    INTERPRETATION:
+    ────────────────────────────────────
+    Lower % difference = More scale-invariant
+    across different speakers.
+    """
+    
+    ax.text(0.05, 0.95, summary_text, transform=ax.transAxes, fontsize=10,
+            verticalalignment='top', color='#EAEAEA',
+            bbox=dict(boxstyle='round', facecolor='#1a1a1a', edgecolor='#333'))
+    
+    plt.tight_layout()
+    
+    plot_path = os.path.join(output_dir, 'batch_comparison.png')
+    plt.savefig(plot_path, dpi=300, facecolor='#111111', bbox_inches='tight')
+    plt.close()
+    
+    print(f"Batch visualization saved to: {plot_path}")
+
+
+def compare_all_golden_files(cleaned_data_dir: str, output_dir: str) -> pd.DataFrame:
+    """
+    Find and compare all golden files across different phonemes.
+    
+    Args:
+        cleaned_data_dir: Path to the cleaned data directory (e.g., data/02_cleaned)
+        output_dir: Directory to save results
+    
+    Returns:
+        DataFrame with all golden file formant data
+    """
+    import glob
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Find all golden files
+    golden_pattern = os.path.join(cleaned_data_dir, '*', '*_golden_*.wav')
+    golden_files = glob.glob(golden_pattern)
+    
+    if not golden_files:
+        print(f"Error: No golden files found in {cleaned_data_dir}")
+        return None
+    
+    print(f"\nFound {len(golden_files)} golden files")
+    print("=" * 60)
+    
+    # Analyze each golden file
+    all_results = []
+    
+    for golden_file in tqdm(sorted(golden_files), desc="Analyzing golden files"):
+        # Extract phoneme from parent directory
+        phoneme = os.path.basename(os.path.dirname(golden_file))
+        filename = os.path.basename(golden_file)
+        
+        result = analyze_audio_file(golden_file)
+        
+        if result is None:
+            continue
+        
+        result['phoneme'] = phoneme
+        all_results.append(result)
+    
+    if not all_results:
+        print("Error: No golden files could be analyzed")
+        return None
+    
+    # Create DataFrame
+    df = pd.DataFrame(all_results)
+    
+    # Save detailed results
+    csv_path = os.path.join(output_dir, 'golden_files_comparison.csv')
+    df.to_csv(csv_path, index=False)
+    print(f"\nResults saved to: {csv_path}")
+    
+    # Create visualization
+    create_golden_comparison_plots(df, output_dir)
+    
+    return df
+
+
+def create_golden_comparison_plots(df: pd.DataFrame, output_dir: str):
+    """Create visualization comparing all golden files across phonemes."""
+    
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.patch.set_facecolor('#111111')
+    
+    # Use a colormap for different phonemes
+    n_phonemes = len(df)
+    colors = plt.cm.rainbow(np.linspace(0, 1, n_phonemes))
+    
+    # 1. F1-F2 Vowel Space (Traditional)
+    ax = axes[0, 0]
+    ax.set_facecolor('#1a1a1a')
+    
+    for i, (_, row) in enumerate(df.iterrows()):
+        ax.scatter(row['f2_mean'], row['f1_mean'], 
+                   c=[colors[i]], s=150, alpha=0.8,
+                   edgecolors='white', linewidths=1)
+        ax.annotate(row['phoneme'], (row['f2_mean'], row['f1_mean']),
+                    xytext=(5, 5), textcoords='offset points',
+                    fontsize=12, color='#EAEAEA')
+    
+    ax.invert_xaxis()
+    ax.invert_yaxis()
+    ax.set_xlabel('F2 (Hz)', color='#EAEAEA', fontsize=11)
+    ax.set_ylabel('F1 (Hz)', color='#EAEAEA', fontsize=11)
+    ax.set_title('F1-F2 Vowel Space (Golden Files)', color='#EAEAEA', fontweight='bold', fontsize=12)
+    ax.tick_params(colors='#EAEAEA')
+    ax.grid(True, alpha=0.2, color='#444')
+    ax.spines['bottom'].set_color('#333')
+    ax.spines['left'].set_color('#333')
+    ax.spines['top'].set_color('#333')
+    ax.spines['right'].set_color('#333')
+    
+    # 2. F1/F2 Ratio by Phoneme
+    ax = axes[0, 1]
+    ax.set_facecolor('#1a1a1a')
+    
+    phonemes = df['phoneme'].tolist()
+    ratios = df['f1_f2_ratio_mean'].tolist()
+    
+    bars = ax.barh(range(len(phonemes)), ratios, color=colors, alpha=0.8)
+    ax.set_yticks(range(len(phonemes)))
+    ax.set_yticklabels(phonemes, fontsize=10)
+    ax.set_xlabel('F1/F2 Ratio', color='#EAEAEA', fontsize=11)
+    ax.set_title('F1/F2 Ratio by Phoneme', color='#EAEAEA', fontweight='bold', fontsize=12)
+    ax.tick_params(colors='#EAEAEA')
+    ax.spines['bottom'].set_color('#333')
+    ax.spines['left'].set_color('#333')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # 3. F2/F3 Ratio by Phoneme
+    ax = axes[1, 0]
+    ax.set_facecolor('#1a1a1a')
+    
+    ratios = df['f2_f3_ratio_mean'].tolist()
+    
+    bars = ax.barh(range(len(phonemes)), ratios, color=colors, alpha=0.8)
+    ax.set_yticks(range(len(phonemes)))
+    ax.set_yticklabels(phonemes, fontsize=10)
+    ax.set_xlabel('F2/F3 Ratio', color='#EAEAEA', fontsize=11)
+    ax.set_title('F2/F3 Ratio by Phoneme', color='#EAEAEA', fontweight='bold', fontsize=12)
+    ax.tick_params(colors='#EAEAEA')
+    ax.spines['bottom'].set_color('#333')
+    ax.spines['left'].set_color('#333')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # 4. Summary Table
+    ax = axes[1, 1]
+    ax.set_facecolor('#1a1a1a')
+    ax.axis('off')
+    
+    # Create summary
+    summary_lines = []
+    for _, row in df.iterrows():
+        summary_lines.append(
+            f"{row['phoneme']}: F1={row['f1_mean']:.0f}, F2={row['f2_mean']:.0f}, "
+            f"F1/F2={row['f1_f2_ratio_mean']:.3f}"
+        )
+    
+    summary_text = f"""
+    GOLDEN FILES COMPARISON
+    =======================
+    
+    Total phonemes: {len(df)}
+    
+    FORMANT SUMMARY:
+    ────────────────────────────────────
+{chr(10).join(f'    {line}' for line in summary_lines[:20])}
+    {'... and more' if len(summary_lines) > 20 else ''}
+    
+    RATIO STATISTICS:
+    ────────────────────────────────────
+    F1/F2 range: {df['f1_f2_ratio_mean'].min():.3f} - {df['f1_f2_ratio_mean'].max():.3f}
+    F2/F3 range: {df['f2_f3_ratio_mean'].min():.3f} - {df['f2_f3_ratio_mean'].max():.3f}
+    """
+    
+    ax.text(0.02, 0.98, summary_text, transform=ax.transAxes, fontsize=9,
+            verticalalignment='top', color='#EAEAEA',
+            bbox=dict(boxstyle='round', facecolor='#1a1a1a', edgecolor='#333'))
+    
+    plt.tight_layout()
+    
+    plot_path = os.path.join(output_dir, 'golden_files_comparison.png')
+    plt.savefig(plot_path, dpi=300, facecolor='#111111', bbox_inches='tight')
+    plt.close()
+    
+    print(f"Visualization saved to: {plot_path}")
+    
+    # Generate additional seaborn-based plots if available
+    if HAS_SEABORN:
+        create_seaborn_golden_plots(df, output_dir)
+
+
+def create_seaborn_golden_plots(df: pd.DataFrame, output_dir: str):
+    """Create enhanced seaborn-based visualizations for golden files."""
+    
+    # Set aesthetics
+    sns.set_style("darkgrid")
+    # Re-apply Devanagari font after sns.set_style (which resets rcParams)
+    plt.rcParams['font.family'] = ['Noto Sans Devanagari', 'DejaVu Sans', 'sans-serif']
+    plt.rcParams['figure.facecolor'] = '#1a1a1a'
+    plt.rcParams['axes.facecolor'] = '#1a1a1a'
+    plt.rcParams['text.color'] = '#EAEAEA'
+    plt.rcParams['axes.labelcolor'] = '#EAEAEA'
+    plt.rcParams['xtick.color'] = '#EAEAEA'
+    plt.rcParams['ytick.color'] = '#EAEAEA'
+    
+    # 1. Vowel Space Map with seaborn (F1 vs F2)
+    plt.figure(figsize=(14, 10))
+    sns.scatterplot(data=df, x='f2_mean', y='f1_mean', hue='phoneme', 
+                    style='phoneme', s=200, palette='bright', legend='brief')
+    plt.gca().invert_xaxis()
+    plt.gca().invert_yaxis()
+    plt.title('Golden Vowel Space (F1 vs F2)', fontsize=16, color='white')
+    plt.xlabel('F2 Frequency (Tongue Frontness)', fontsize=12)
+    plt.ylabel('F1 Frequency (Jaw Opening)', fontsize=12)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/01_vowel_space_map.png", dpi=300, facecolor='#1a1a1a')
+    plt.close()
+    
+    # 2. Ratio vs F3 Separation Analysis (for ऋ vs अ detection)
+    plt.figure(figsize=(14, 10))
+    sns.scatterplot(data=df, x='f1_f2_ratio_mean', y='f3_mean', hue='phoneme', 
+                    style='phoneme', s=200, palette='bright', legend='brief')
+    plt.title('Separation Analysis: F1/F2 Ratio vs F3', fontsize=16, color='white')
+    plt.xlabel('F1/F2 Ratio (Invariant Shape)', fontsize=12)
+    plt.ylabel('F3 Frequency (Retroflexion Indicator)', fontsize=12)
+    plt.axvline(x=0.42, color='white', linestyle='--', alpha=0.3, label='Ratio Threshold')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/02_ratio_vs_f3_separation.png", dpi=300, facecolor='#1a1a1a')
+    plt.close()
+    
+    # 3. F1/F2 Ratio Stability Boxplot by Phoneme
+    plt.figure(figsize=(16, 8))
+    # Sort by ratio for better visualization
+    order = df.groupby('phoneme')['f1_f2_ratio_mean'].mean().sort_values().index.tolist()
+    sns.boxplot(data=df, x='phoneme', y='f1_f2_ratio_mean', order=order, 
+                hue='phoneme', palette='Set2', legend=False)
+    plt.title('F1/F2 Ratio by Phoneme (sorted by mean)', fontsize=16, color='white')
+    plt.xlabel('Phoneme', fontsize=12)
+    plt.ylabel('F1/F2 Ratio', fontsize=12)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/03_ratio_stability.png", dpi=300, facecolor='#1a1a1a')
+    plt.close()
+    
+    # 4. F3-F2 Difference by Phoneme (Retroflexion indicator)
+    if 'f3_f2_diff_mean' in df.columns:
+        plt.figure(figsize=(16, 8))
+        order = df.groupby('phoneme')['f3_f2_diff_mean'].mean().sort_values().index.tolist()
+        sns.barplot(data=df, x='phoneme', y='f3_f2_diff_mean', order=order, 
+                    hue='phoneme', palette='coolwarm', legend=False)
+        plt.title('F3-F2 Difference by Phoneme (Retroflexion Indicator)', fontsize=16, color='white')
+        plt.xlabel('Phoneme', fontsize=12)
+        plt.ylabel('F3 - F2 (Hz)', fontsize=12)
+        plt.xticks(rotation=45)
+        plt.axhline(y=df['f3_f2_diff_mean'].mean(), color='yellow', linestyle='--', alpha=0.5, label='Mean')
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/04_f3_f2_diff_retroflexion.png", dpi=300, facecolor='#1a1a1a')
+        plt.close()
+    
+    # 5. Separation Check Plot for target vowels (A vs Ri analysis)
+    target_phonemes = ['अ', 'ॠ', 'इ', 'उ', 'ऋ', 'आ', 'ए', 'ओ']
+    subset = df[df['phoneme'].isin(target_phonemes)]
+    
+    if not subset.empty and 'f3_f2_diff_mean' in df.columns:
+        plt.figure(figsize=(12, 10))
+        sns.scatterplot(data=subset, x='f1_f2_ratio_mean', y='f3_f2_diff_mean', 
+                        hue='phoneme', style='phoneme', s=250, palette='bright')
+        
+        plt.title("Separation Check: 'A' (अ) vs 'Ri' (ॠ/ऋ)", fontsize=16, color='white')
+        plt.xlabel("F1 / F2 Ratio (Invariant Shape)", fontsize=12)
+        plt.ylabel("F3 - F2 Frequency Gap (Hz)", fontsize=12)
+        plt.axvline(x=0.41, color='gray', linestyle='--', alpha=0.5, label='Ratio Threshold')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/05_separation_check_a_vs_ri.png", dpi=300, facecolor='#1a1a1a')
+        plt.close()
+        
+        # Print statistical verdict
+        print("\n--- STATISTICAL VERDICT: 'A' vs 'Ri' ---")
+        verdict_subset = df[df['phoneme'].isin(['अ', 'ॠ', 'ऋ'])]
+        if not verdict_subset.empty:
+            summary = verdict_subset.groupby('phoneme')[['f1_f2_ratio_mean', 'f3_f2_diff_mean']].mean()
+            print(summary.to_string())
+    
+    print(f"Seaborn visualizations saved to: {output_dir}/01-05_*.png")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Formant-Based Invariant Analysis: Compare frequency ratios between audio files',
@@ -481,69 +1026,154 @@ Examples:
 
   # Custom output directory
   python formant_ratio_analysis.py --file1 audio1.wav --file2 audio2.wav --output_dir ./results
+
+  # Batch mode: Compare all files in a folder against a reference file
+  python formant_ratio_analysis.py --folder data/02_cleaned/अ --reference data/02_cleaned/अ/अ_golden_043.wav
+
+  # Batch mode with custom output
+  python formant_ratio_analysis.py --folder data/02_cleaned/इ --reference data/02_cleaned/इ/इ_golden_036.wav --output_dir results/इ_analysis
+
+  # Golden comparison mode: Compare all golden files across phonemes
+  python formant_ratio_analysis.py --golden-compare data/02_cleaned
         """
     )
     
-    parser.add_argument('--file1', type=str, required=True, 
-                        help='Path to first audio file')
-    parser.add_argument('--file2', type=str, required=True, 
-                        help='Path to second audio file')
+    # Single file comparison mode
+    parser.add_argument('--file1', type=str, 
+                        help='Path to first audio file (for single comparison mode)')
+    parser.add_argument('--file2', type=str, 
+                        help='Path to second audio file (for single comparison mode)')
+    
+    # Batch folder comparison mode
+    parser.add_argument('--folder', type=str,
+                        help='Path to folder containing audio files (for batch mode)')
+    parser.add_argument('--reference', type=str,
+                        help='Path to reference/pinned file to compare against (for batch mode)')
+    
+    # Golden files comparison mode
+    parser.add_argument('--golden-compare', type=str, dest='golden_compare',
+                        help='Path to cleaned data folder to compare all golden files (e.g., data/02_cleaned)')
+    
     parser.add_argument('--output_dir', type=str, 
                         default='results/formant_ratio_analysis',
                         help='Output directory for results')
     
     args = parser.parse_args()
     
-    # Validate files exist
-    if not os.path.exists(args.file1):
-        print(f"Error: File not found: {args.file1}")
-        return
-    if not os.path.exists(args.file2):
-        print(f"Error: File not found: {args.file2}")
+    # Determine mode
+    batch_mode = args.folder is not None and args.reference is not None
+    single_mode = args.file1 is not None and args.file2 is not None
+    golden_mode = args.golden_compare is not None
+    
+    if not batch_mode and not single_mode and not golden_mode:
+        print("Error: Please specify one of:")
+        print("  - Single mode: --file1 and --file2")
+        print("  - Batch mode: --folder and --reference")
+        print("  - Golden mode: --golden-compare <cleaned_data_dir>")
+        parser.print_help()
         return
     
     print("=" * 60)
     print("FORMANT-BASED INVARIANT ANALYSIS")
     print("=" * 60)
     print(f"\nHypothesis: Frequency ratios (F1/F2, F2/F3, log ratios)")
-    print(f"should be scale-invariant across male/female voices")
+    print(f"should be scale-invariant across different speakers")
     print("=" * 60)
     
-    # Run comparison
-    results_df = compare_two_files(
-        args.file1, args.file2, 
-        args.output_dir
-    )
+    if batch_mode:
+        # Batch folder analysis
+        if not os.path.isdir(args.folder):
+            print(f"Error: Folder not found: {args.folder}")
+            return
+        if not os.path.exists(args.reference):
+            print(f"Error: Reference file not found: {args.reference}")
+            return
+        
+        print(f"\nMode: BATCH COMPARISON")
+        print(f"Folder: {args.folder}")
+        print(f"Reference: {args.reference}")
+        
+        results_df = batch_compare_folder(args.folder, args.reference, args.output_dir)
+        
+        if results_df is not None:
+            print("\n" + "=" * 60)
+            print("BATCH ANALYSIS COMPLETE")
+            print("=" * 60)
+            print(f"Files compared: {len(results_df)}")
+            
+            # Show best and worst matches
+            if 'f1_f2_ratio_mean_pct_diff' in results_df.columns:
+                best_idx = results_df['f1_f2_ratio_mean_pct_diff'].idxmin()
+                worst_idx = results_df['f1_f2_ratio_mean_pct_diff'].idxmax()
+                
+                print(f"\nBest match (F1/F2 ratio): {results_df.loc[best_idx, 'filename']}")
+                print(f"  Difference: {results_df.loc[best_idx, 'f1_f2_ratio_mean_pct_diff']:.2f}%")
+                
+                print(f"\nWorst match (F1/F2 ratio): {results_df.loc[worst_idx, 'filename']}")
+                print(f"  Difference: {results_df.loc[worst_idx, 'f1_f2_ratio_mean_pct_diff']:.2f}%")
     
-    if results_df is not None:
-        print("\n" + "=" * 60)
-        print("RESULTS SUMMARY")
-        print("=" * 60)
-        print(results_df.to_string(index=False))
-        print("\n" + "=" * 60)
-        print("HYPOTHESIS EVALUATION")
-        print("=" * 60)
+    elif golden_mode:
+        # Golden files comparison
+        if not os.path.isdir(args.golden_compare):
+            print(f"Error: Directory not found: {args.golden_compare}")
+            return
         
-        # Evaluate which ratios show the best invariance
-        ratio_metrics = results_df[results_df['metric'].str.contains('ratio|log')]
-        best_invariant = ratio_metrics.loc[ratio_metrics['percent_difference'].idxmin()]
+        print(f"\nMode: GOLDEN FILES COMPARISON")
+        print(f"Directory: {args.golden_compare}")
         
-        print(f"\nMost invariant ratio: {best_invariant['metric']}")
-        print(f"  Percent difference: {best_invariant['percent_difference']:.2f}%")
+        results_df = compare_all_golden_files(args.golden_compare, args.output_dir)
         
-        # Check if hypothesis holds (ratios should differ less than raw formants)
-        raw_formant_df = results_df[results_df['metric'].isin(['f1_mean', 'f2_mean', 'f3_mean'])]
-        avg_raw_pct_diff = raw_formant_df['percent_difference'].mean()
-        avg_ratio_pct_diff = ratio_metrics['percent_difference'].mean()
+        if results_df is not None:
+            print("\n" + "=" * 60)
+            print("GOLDEN FILES ANALYSIS COMPLETE")
+            print("=" * 60)
+            print(f"Phonemes analyzed: {len(results_df)}")
+            
+            # Show ratio statistics
+            print(f"\nF1/F2 Ratio Range: {results_df['f1_f2_ratio_mean'].min():.3f} - {results_df['f1_f2_ratio_mean'].max():.3f}")
+            print(f"F2/F3 Ratio Range: {results_df['f2_f3_ratio_mean'].min():.3f} - {results_df['f2_f3_ratio_mean'].max():.3f}")
+    
+    else:
+        # Single file comparison
+        if not os.path.exists(args.file1):
+            print(f"Error: File not found: {args.file1}")
+            return
+        if not os.path.exists(args.file2):
+            print(f"Error: File not found: {args.file2}")
+            return
         
-        print(f"\nAverage % difference in raw formants: {avg_raw_pct_diff:.2f}%")
-        print(f"Average % difference in ratios: {avg_ratio_pct_diff:.2f}%")
+        results_df = compare_two_files(args.file1, args.file2, args.output_dir)
         
-        if avg_ratio_pct_diff < avg_raw_pct_diff:
-            print("\n✓ HYPOTHESIS SUPPORTED: Ratios show better invariance than raw formants")
-        else:
-            print("\n✗ HYPOTHESIS NOT SUPPORTED: Ratios do not show better invariance")
+        if results_df is not None:
+            print("\n" + "=" * 60)
+            print("RESULTS SUMMARY")
+            print("=" * 60)
+            print(results_df.to_string(index=False))
+            print("\n" + "=" * 60)
+            print("HYPOTHESIS EVALUATION")
+            print("=" * 60)
+            
+            # Evaluate which ratios show the best invariance
+            ratio_metrics = results_df[results_df['metric'].str.contains('ratio|log')]
+            best_invariant = ratio_metrics.loc[ratio_metrics['percent_difference'].idxmin()]
+            
+            print(f"\nMost invariant ratio: {best_invariant['metric']}")
+            print(f"  Percent difference: {best_invariant['percent_difference']:.2f}%")
+            
+            # Check if hypothesis holds (ratios should differ less than raw formants)
+            raw_formant_df = results_df[results_df['metric'].isin(['f1_mean', 'f2_mean', 'f3_mean'])]
+            avg_raw_pct_diff = raw_formant_df['percent_difference'].mean()
+            avg_ratio_pct_diff = ratio_metrics['percent_difference'].mean()
+            
+            print(f"\nAverage % difference in raw formants: {avg_raw_pct_diff:.2f}%")
+            print(f"Average % difference in ratios: {avg_ratio_pct_diff:.2f}%")
+            
+            if avg_ratio_pct_diff < avg_raw_pct_diff:
+                print("\n✓ HYPOTHESIS SUPPORTED: Ratios show better invariance than raw formants")
+            else:
+                print("\n✗ HYPOTHESIS NOT SUPPORTED: Ratios do not show better invariance")
 
 
 if __name__ == "__main__":
     main()
+
