@@ -26,3 +26,5 @@ There are layout rules:
 -- Layout of the sub compotent (sub-compotent).
 
 I don't think hidding the button once render it good approach instead it could be disabled is better approach. 
+
+So, having the matrix of components and their states is good idea, for each page this way we can clearly define the states of the components and their interactions across various states.
