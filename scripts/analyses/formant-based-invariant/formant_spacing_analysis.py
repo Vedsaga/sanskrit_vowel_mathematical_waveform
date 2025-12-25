@@ -758,8 +758,8 @@ Examples:
     parser.add_argument('--reference', type=str, help='Path to reference file (for batch mode)')
     parser.add_argument('--golden-compare', type=str, dest='golden_compare',
                         help='Path to cleaned data folder (for golden mode)')
-    parser.add_argument('--output_dir', type=str, default='results/formant_spacing_analysis',
-                        help='Output directory for results')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Output directory for results (default: results/formant_spacing_analysis/{mode})')
     
     args = parser.parse_args()
     
@@ -774,6 +774,21 @@ Examples:
         print("  - Golden mode: --golden-compare <cleaned_data_dir>")
         parser.print_help()
         return
+    
+    # Generate default output directory based on mode
+    if args.output_dir is None:
+        base_dir = "results/formant_spacing_analysis"
+        if golden_mode:
+            output_dir = f"{base_dir}/golden"
+        elif batch_mode:
+            folder_name = os.path.basename(os.path.normpath(args.folder))
+            output_dir = f"{base_dir}/batch/{folder_name}"
+        else:
+            name1 = os.path.splitext(os.path.basename(args.file1))[0]
+            name2 = os.path.splitext(os.path.basename(args.file2))[0]
+            output_dir = f"{base_dir}/compare/{name1}_vs_{name2}"
+    else:
+        output_dir = args.output_dir
     
     print("=" * 60)
     print("FORMANT SPACING INVARIANCE ANALYSIS")
@@ -791,7 +806,7 @@ Examples:
             return
         
         print(f"\nMode: BATCH COMPARISON")
-        results_df = batch_compare_folder(args.folder, args.reference, args.output_dir)
+        results_df = batch_compare_folder(args.folder, args.reference, output_dir)
         
         if results_df is not None:
             print("\n" + "=" * 60)
@@ -809,7 +824,7 @@ Examples:
             return
         
         print(f"\nMode: GOLDEN FILES COMPARISON")
-        results_df = compare_all_golden_files(args.golden_compare, args.output_dir)
+        results_df = compare_all_golden_files(args.golden_compare, output_dir)
         
         if results_df is not None:
             print("\n" + "=" * 60)
@@ -827,7 +842,7 @@ Examples:
             return
         
         print(f"\nMode: TWO-FILE COMPARISON")
-        results_df = compare_two_files(args.file1, args.file2, args.output_dir)
+        results_df = compare_two_files(args.file1, args.file2, output_dir)
         
         if results_df is not None:
             print("\n" + "=" * 60)

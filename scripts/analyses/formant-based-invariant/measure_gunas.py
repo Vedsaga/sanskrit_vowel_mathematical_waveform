@@ -353,14 +353,30 @@ Examples:
     parser.add_argument('--folder', type=str, help='Path to phoneme folder')
     parser.add_argument('--golden-compare', dest='golden_compare', type=str,
                         help='Path to cleaned data directory for golden files')
-    parser.add_argument('--output_dir', type=str, default='results/gunas_analysis',
-                        help='Output directory')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Output directory (default: results/gunas_analysis/{mode})')
     
     args = parser.parse_args()
     
     if not HAS_LIBROSA or not HAS_NOLDS:
         print("Missing dependencies. Install: pip install librosa nolds")
         return
+    
+    # Generate default output directory based on mode
+    if args.output_dir is None:
+        base_dir = "results/gunas_analysis"
+        if args.golden_compare:
+            output_dir = f"{base_dir}/golden"
+        elif args.folder:
+            folder_name = os.path.basename(os.path.normpath(args.folder))
+            output_dir = f"{base_dir}/batch/{folder_name}"
+        elif args.file:
+            file_name = os.path.splitext(os.path.basename(args.file))[0]
+            output_dir = f"{base_dir}/single/{file_name}"
+        else:
+            output_dir = base_dir
+    else:
+        output_dir = args.output_dir
     
     print("=" * 60)
     print("GUNAS ANALYSIS: Universal Invariants")
@@ -371,13 +387,13 @@ Examples:
     print("=" * 60)
     
     if args.golden_compare:
-        df = analyze_golden_files(args.golden_compare, args.output_dir)
+        df = analyze_golden_files(args.golden_compare, output_dir)
         if df is not None:
             print(f"\n--- Summary ---")
             print(df[['phoneme', 'sattva', 'rajas', 'tamas']].to_string(index=False))
     
     elif args.folder:
-        df = analyze_folder(args.folder, args.output_dir)
+        df = analyze_folder(args.folder, output_dir)
         if df is not None:
             print(f"\n--- Summary ---")
             print(f"Sattva: {df['sattva'].mean():.3f} ± {df['sattva'].std():.3f}")

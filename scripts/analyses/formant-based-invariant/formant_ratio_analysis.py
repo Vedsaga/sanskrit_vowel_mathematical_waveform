@@ -1112,9 +1112,8 @@ Examples:
     parser.add_argument('--golden-compare', type=str, dest='golden_compare',
                         help='Path to cleaned data folder to compare all golden files (e.g., data/02_cleaned)')
     
-    parser.add_argument('--output_dir', type=str, 
-                        default='results/formant_ratio_analysis',
-                        help='Output directory for results')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Output directory for results (default: results/formant_ratio_analysis/{mode})')
     
     args = parser.parse_args()
     
@@ -1130,6 +1129,23 @@ Examples:
         print("  - Golden mode: --golden-compare <cleaned_data_dir>")
         parser.print_help()
         return
+    
+    # Generate default output directory based on mode
+    if args.output_dir is None:
+        base_dir = "results/formant_ratio_analysis"
+        if golden_mode:
+            output_dir = f"{base_dir}/golden"
+        elif batch_mode:
+            # Use folder name for batch mode
+            folder_name = os.path.basename(os.path.normpath(args.folder))
+            output_dir = f"{base_dir}/batch/{folder_name}"
+        else:
+            # Single mode: file1_vs_file2
+            name1 = os.path.splitext(os.path.basename(args.file1))[0]
+            name2 = os.path.splitext(os.path.basename(args.file2))[0]
+            output_dir = f"{base_dir}/compare/{name1}_vs_{name2}"
+    else:
+        output_dir = args.output_dir
     
     print("=" * 60)
     print("FORMANT-BASED INVARIANT ANALYSIS")
@@ -1151,7 +1167,7 @@ Examples:
         print(f"Folder: {args.folder}")
         print(f"Reference: {args.reference}")
         
-        results_df = batch_compare_folder(args.folder, args.reference, args.output_dir)
+        results_df = batch_compare_folder(args.folder, args.reference, output_dir)
         
         if results_df is not None:
             print("\n" + "=" * 60)
@@ -1179,7 +1195,7 @@ Examples:
         print(f"\nMode: GOLDEN FILES COMPARISON")
         print(f"Directory: {args.golden_compare}")
         
-        results_df = compare_all_golden_files(args.golden_compare, args.output_dir)
+        results_df = compare_all_golden_files(args.golden_compare, output_dir)
         
         if results_df is not None:
             print("\n" + "=" * 60)
@@ -1200,7 +1216,7 @@ Examples:
             print(f"Error: File not found: {args.file2}")
             return
         
-        results_df = compare_two_files(args.file1, args.file2, args.output_dir)
+        results_df = compare_two_files(args.file1, args.file2, output_dir)
         
         if results_df is not None:
             print("\n" + "=" * 60)
