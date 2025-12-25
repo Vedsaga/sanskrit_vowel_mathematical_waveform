@@ -212,66 +212,91 @@ def create_folder_plot(df, phoneme, output_dir):
 
 
 def create_golden_plot(df, output_dir):
-    """Create visualization for all golden files."""
-    # Set aesthetics
-    if HAS_SEABORN:
-        sns.set_style("darkgrid")
+    """Create visualization for all golden files with high contrast."""
+    # COLOR SCHEME aligned with sound-topology dark mode
+    BG_COLOR = '#111111'
+    TEXT_COLOR = '#eaeaea'
+    ACCENT_COLOR = '#e17100'  # Orange - use sparingly
+    BORDER_COLOR = '#333333'
+    
+    plt.style.use('dark_background')
     plt.rcParams['font.family'] = ['Noto Sans Devanagari', 'DejaVu Sans', 'sans-serif']
-    plt.rcParams['figure.facecolor'] = '#1a1a1a'
-    plt.rcParams['axes.facecolor'] = '#1a1a1a'
-    plt.rcParams['text.color'] = '#EAEAEA'
+    plt.rcParams['figure.facecolor'] = BG_COLOR
+    plt.rcParams['axes.facecolor'] = BG_COLOR
+    plt.rcParams['axes.edgecolor'] = BORDER_COLOR
+    plt.rcParams['axes.labelcolor'] = TEXT_COLOR
+    plt.rcParams['text.color'] = TEXT_COLOR
+    plt.rcParams['xtick.color'] = TEXT_COLOR
+    plt.rcParams['ytick.color'] = TEXT_COLOR
+    plt.rcParams['grid.color'] = '#2a2a2a'
     
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.patch.set_facecolor('#1a1a1a')
-    fig.suptitle(f"Gunas Analysis: All Golden Files ({len(df)} phonemes)", color='white', fontsize=14)
+    fig.patch.set_facecolor(BG_COLOR)
+    fig.suptitle(f"Gunas Analysis: All Golden Files ({len(df)} phonemes)", 
+                 color=TEXT_COLOR, fontsize=16, fontweight='bold')
     
     # 1. Sattva vs Rajas scatter (Complexity vs Unpredictability)
     ax = axes[0, 0]
-    ax.set_facecolor('#1a1a1a')
+    ax.set_facecolor(BG_COLOR)
     if HAS_SEABORN:
         sns.scatterplot(data=df, x='rajas', y='sattva', hue='phoneme', 
-                        s=150, palette='bright', ax=ax, legend=False)
+                        s=200, palette='bright', ax=ax, legend=False,
+                        edgecolor='white', linewidth=0.5)
     else:
-        ax.scatter(df['rajas'], df['sattva'], c=range(len(df)), cmap='rainbow', s=100)
+        ax.scatter(df['rajas'], df['sattva'], c=range(len(df)), cmap='rainbow', s=150, edgecolors='white')
     for _, row in df.iterrows():
         ax.annotate(row['phoneme'], (row['rajas'], row['sattva']), 
-                    fontsize=10, color='#EAEAEA', xytext=(3, 3), textcoords='offset points')
-    ax.set_xlabel('Rajas (Entropy/Unpredictability)', color='#EAEAEA')
-    ax.set_ylabel('Sattva (Fractal Dimension)', color='#EAEAEA')
-    ax.set_title('Sattva vs Rajas', color='white')
-    ax.tick_params(colors='#EAEAEA')
+                    fontsize=11, color=TEXT_COLOR, xytext=(4, 4), textcoords='offset points')
+    ax.set_xlabel('Rajas (Entropy/Unpredictability)', color=TEXT_COLOR, fontsize=12)
+    ax.set_ylabel('Sattva (Fractal Dimension)', color=TEXT_COLOR, fontsize=12)
+    ax.set_title('Sattva vs Rajas', color=TEXT_COLOR, fontweight='bold', fontsize=13)
+    ax.tick_params(colors=TEXT_COLOR, labelsize=10)
+    ax.grid(True, alpha=0.15, color='white')
+    for spine in ax.spines.values():
+        spine.set_color(BORDER_COLOR)
+        spine.set_linewidth(1)
     
     # 2. Sattva vs Tamas (Complexity vs Stability)
     ax = axes[0, 1]
-    ax.set_facecolor('#1a1a1a')
+    ax.set_facecolor(BG_COLOR)
     if HAS_SEABORN:
         sns.scatterplot(data=df, x='tamas', y='sattva', hue='phoneme',
-                        s=150, palette='bright', ax=ax, legend=False)
+                        s=200, palette='bright', ax=ax, legend=False,
+                        edgecolor='white', linewidth=0.5)
     else:
-        ax.scatter(df['tamas'], df['sattva'], c=range(len(df)), cmap='rainbow', s=100)
+        ax.scatter(df['tamas'], df['sattva'], c=range(len(df)), cmap='rainbow', s=150, edgecolors='white')
     for _, row in df.iterrows():
         ax.annotate(row['phoneme'], (row['tamas'], row['sattva']),
-                    fontsize=10, color='#EAEAEA', xytext=(3, 3), textcoords='offset points')
-    ax.set_xlabel('Tamas (Lyapunov/Instability)', color='#EAEAEA')
-    ax.set_ylabel('Sattva (Fractal Dimension)', color='#EAEAEA')
-    ax.set_title('Sattva vs Tamas', color='white')
-    ax.tick_params(colors='#EAEAEA')
+                    fontsize=11, color=TEXT_COLOR, xytext=(4, 4), textcoords='offset points')
+    ax.set_xlabel('Tamas (Lyapunov/Instability)', color=TEXT_COLOR, fontsize=12)
+    ax.set_ylabel('Sattva (Fractal Dimension)', color=TEXT_COLOR, fontsize=12)
+    ax.set_title('Sattva vs Tamas', color=TEXT_COLOR, fontweight='bold', fontsize=13)
+    ax.tick_params(colors=TEXT_COLOR, labelsize=10)
+    ax.grid(True, alpha=0.15, color='white')
+    for spine in ax.spines.values():
+        spine.set_color(BORDER_COLOR)
+        spine.set_linewidth(1)
     
-    # 3. Bar chart of Sattva by phoneme
+    # 3. Bar chart of Sattva by phoneme - RAINBOW COLORS
     ax = axes[1, 0]
-    ax.set_facecolor('#1a1a1a')
+    ax.set_facecolor(BG_COLOR)
     sorted_df = df.sort_values('sattva')
-    colors = plt.cm.rainbow(np.linspace(0, 1, len(sorted_df)))
-    ax.barh(range(len(sorted_df)), sorted_df['sattva'], color=colors, alpha=0.8)
-    ax.set_yticks(range(len(sorted_df)))
-    ax.set_yticklabels(sorted_df['phoneme'], fontsize=9)
-    ax.set_xlabel('Sattva (Fractal Dimension)', color='#EAEAEA')
-    ax.set_title('Sattva by Phoneme', color='white')
-    ax.tick_params(colors='#EAEAEA')
+    n = len(sorted_df)
+    rainbow_colors = plt.cm.rainbow(np.linspace(0, 1, n))
+    bars = ax.barh(range(n), sorted_df['sattva'], color=rainbow_colors, alpha=0.9, edgecolor='white', linewidth=1)
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(sorted_df['phoneme'], fontsize=10, color=TEXT_COLOR)
+    ax.set_xlabel('Sattva (Fractal Dimension)', color=TEXT_COLOR, fontsize=12)
+    ax.set_title('Sattva by Phoneme', color=TEXT_COLOR, fontweight='bold', fontsize=13)
+    ax.tick_params(colors=TEXT_COLOR, labelsize=10)
+    ax.grid(True, axis='x', alpha=0.15, color='white')
+    for spine in ax.spines.values():
+        spine.set_color(BORDER_COLOR)
+        spine.set_linewidth(1)
     
     # 4. Summary stats
     ax = axes[1, 1]
-    ax.set_facecolor('#1a1a1a')
+    ax.set_facecolor(BG_COLOR)
     ax.axis('off')
     
     summary_text = f"""
@@ -296,13 +321,13 @@ def create_golden_plot(df, output_dir):
       Range: {df['tamas'].min():.3f} - {df['tamas'].max():.3f}
     """
     
-    ax.text(0.1, 0.9, summary_text, transform=ax.transAxes, fontsize=11,
-            verticalalignment='top', color='#EAEAEA', family='monospace',
-            bbox=dict(boxstyle='round', facecolor='#2a2a2a', edgecolor='#444'))
+    ax.text(0.1, 0.9, summary_text, transform=ax.transAxes, fontsize=12,
+            verticalalignment='top', color=TEXT_COLOR, family='monospace',
+            bbox=dict(boxstyle='round', facecolor=BG_COLOR, edgecolor=BORDER_COLOR, linewidth=1))
     
     plt.tight_layout()
     plot_path = os.path.join(output_dir, 'golden_gunas.png')
-    plt.savefig(plot_path, dpi=300, facecolor='#1a1a1a')
+    plt.savefig(plot_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
     print(f"Plot saved to: {plot_path}")
 

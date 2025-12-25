@@ -917,74 +917,124 @@ def create_golden_comparison_plots(df: pd.DataFrame, output_dir: str):
 
 
 def create_seaborn_golden_plots(df: pd.DataFrame, output_dir: str):
-    """Create enhanced seaborn-based visualizations for golden files."""
+    """Create enhanced seaborn-based visualizations for golden files with high contrast."""
+    # COLOR SCHEME aligned with sound-topology dark mode
+    BG_COLOR = '#111111'
+    TEXT_COLOR = '#eaeaea'
+    ACCENT_COLOR = '#e17100'  # Orange - use sparingly for important elements
+    BORDER_COLOR = '#333333'  # Subtle border
     
-    # Set aesthetics
-    sns.set_style("darkgrid")
-    # Re-apply Devanagari font after sns.set_style (which resets rcParams)
+    plt.style.use('dark_background')
     plt.rcParams['font.family'] = ['Noto Sans Devanagari', 'DejaVu Sans', 'sans-serif']
-    plt.rcParams['figure.facecolor'] = '#1a1a1a'
-    plt.rcParams['axes.facecolor'] = '#1a1a1a'
-    plt.rcParams['text.color'] = '#EAEAEA'
-    plt.rcParams['axes.labelcolor'] = '#EAEAEA'
-    plt.rcParams['xtick.color'] = '#EAEAEA'
-    plt.rcParams['ytick.color'] = '#EAEAEA'
+    plt.rcParams['figure.facecolor'] = BG_COLOR
+    plt.rcParams['axes.facecolor'] = BG_COLOR
+    plt.rcParams['axes.edgecolor'] = BORDER_COLOR
+    plt.rcParams['axes.labelcolor'] = TEXT_COLOR
+    plt.rcParams['text.color'] = TEXT_COLOR
+    plt.rcParams['xtick.color'] = TEXT_COLOR
+    plt.rcParams['ytick.color'] = TEXT_COLOR
+    plt.rcParams['grid.color'] = '#2a2a2a'
+    plt.rcParams['grid.alpha'] = 0.5
     
     # 1. Vowel Space Map with seaborn (F1 vs F2)
-    plt.figure(figsize=(14, 10))
+    fig, ax = plt.subplots(figsize=(14, 10))
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
     sns.scatterplot(data=df, x='f2_mean', y='f1_mean', hue='phoneme', 
-                    style='phoneme', s=200, palette='bright', legend='brief')
-    plt.gca().invert_xaxis()
-    plt.gca().invert_yaxis()
-    plt.title('Golden Vowel Space (F1 vs F2)', fontsize=16, color='white')
-    plt.xlabel('F2 Frequency (Tongue Frontness)', fontsize=12)
-    plt.ylabel('F1 Frequency (Jaw Opening)', fontsize=12)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+                    style='phoneme', s=250, palette='bright', legend='brief', ax=ax,
+                    edgecolor='white', linewidth=0.5)
+    ax.invert_xaxis()
+    ax.invert_yaxis()
+    ax.set_title('Golden Vowel Space (F1 vs F2)', fontsize=18, color=TEXT_COLOR, fontweight='bold')
+    ax.set_xlabel('F2 Frequency (Tongue Frontness)', fontsize=13, color=TEXT_COLOR)
+    ax.set_ylabel('F1 Frequency (Jaw Opening)', fontsize=13, color=TEXT_COLOR)
+    ax.tick_params(colors=TEXT_COLOR, labelsize=11)
+    ax.grid(True, alpha=0.15, color='white')
+    for spine in ax.spines.values():
+        spine.set_color(BORDER_COLOR)
+        spine.set_linewidth(1)
+    legend = ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9,
+                       facecolor=BG_COLOR, edgecolor=BORDER_COLOR, labelcolor=TEXT_COLOR)
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/01_vowel_space_map.png", dpi=300, facecolor='#1a1a1a')
+    plt.savefig(f"{output_dir}/01_vowel_space_map.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
     
-    # 2. Ratio vs F3 Separation Analysis (for ऋ vs अ detection)
-    plt.figure(figsize=(14, 10))
+    # 2. Ratio vs F3 Separation Analysis
+    fig, ax = plt.subplots(figsize=(14, 10))
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
     sns.scatterplot(data=df, x='f1_f2_ratio_mean', y='f3_mean', hue='phoneme', 
-                    style='phoneme', s=200, palette='bright', legend='brief')
-    plt.title('Separation Analysis: F1/F2 Ratio vs F3', fontsize=16, color='white')
-    plt.xlabel('F1/F2 Ratio (Invariant Shape)', fontsize=12)
-    plt.ylabel('F3 Frequency (Retroflexion Indicator)', fontsize=12)
-    plt.axvline(x=0.42, color='white', linestyle='--', alpha=0.3, label='Ratio Threshold')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+                    style='phoneme', s=250, palette='bright', legend='brief', ax=ax,
+                    edgecolor='white', linewidth=0.5)
+    ax.set_title('Separation Analysis: F1/F2 Ratio vs F3', fontsize=18, color=TEXT_COLOR, fontweight='bold')
+    ax.set_xlabel('F1/F2 Ratio (Invariant Shape)', fontsize=13, color=TEXT_COLOR)
+    ax.set_ylabel('F3 Frequency (Retroflexion Indicator)', fontsize=13, color=TEXT_COLOR)
+    ax.axvline(x=0.42, color=ACCENT_COLOR, linestyle='--', alpha=0.9, linewidth=2, label='Ratio Threshold')
+    ax.tick_params(colors=TEXT_COLOR, labelsize=11)
+    ax.grid(True, alpha=0.15, color='white')
+    for spine in ax.spines.values():
+        spine.set_color(BORDER_COLOR)
+        spine.set_linewidth(1)
+    legend = ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9,
+                       facecolor=BG_COLOR, edgecolor=BORDER_COLOR, labelcolor=TEXT_COLOR)
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/02_ratio_vs_f3_separation.png", dpi=300, facecolor='#1a1a1a')
+    plt.savefig(f"{output_dir}/02_ratio_vs_f3_separation.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
     
-    # 3. F1/F2 Ratio Stability Boxplot by Phoneme
-    plt.figure(figsize=(16, 8))
-    # Sort by ratio for better visualization
-    order = df.groupby('phoneme')['f1_f2_ratio_mean'].mean().sort_values().index.tolist()
-    sns.boxplot(data=df, x='phoneme', y='f1_f2_ratio_mean', order=order, 
-                hue='phoneme', palette='Set2', legend=False)
-    plt.title('F1/F2 Ratio by Phoneme (sorted by mean)', fontsize=16, color='white')
-    plt.xlabel('Phoneme', fontsize=12)
-    plt.ylabel('F1/F2 Ratio', fontsize=12)
-    plt.xticks(rotation=45)
+    # 3. F1/F2 Ratio by Phoneme - USE BARPLOT with VIBRANT COLORS
+    fig, ax = plt.subplots(figsize=(18, 8))
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
+    
+    sorted_df = df.sort_values('f1_f2_ratio_mean')
+    n = len(sorted_df)
+    rainbow_colors = plt.cm.rainbow(np.linspace(0, 1, n))
+    
+    bars = ax.bar(range(n), sorted_df['f1_f2_ratio_mean'].values,
+                  color=rainbow_colors, edgecolor='white', linewidth=1.5, alpha=0.9)
+    
+    ax.set_xticks(range(n))
+    ax.set_xticklabels(sorted_df['phoneme'].values, fontsize=11, rotation=45, ha='right')
+    ax.set_title('F1/F2 Ratio by Phoneme (sorted by mean)', fontsize=18, color=TEXT_COLOR, fontweight='bold')
+    ax.set_xlabel('Phoneme', fontsize=14, color=TEXT_COLOR)
+    ax.set_ylabel('F1/F2 Ratio', fontsize=14, color=TEXT_COLOR)
+    ax.tick_params(colors=TEXT_COLOR, labelsize=11)
+    ax.grid(True, axis='y', alpha=0.15, color='white')
+    for spine in ax.spines.values():
+        spine.set_color(BORDER_COLOR)
+        spine.set_linewidth(1)
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/03_ratio_stability.png", dpi=300, facecolor='#1a1a1a')
+    plt.savefig(f"{output_dir}/03_ratio_stability.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
     
-    # 4. F3-F2 Difference by Phoneme (Retroflexion indicator)
+    # 4. F3-F2 Difference by Phoneme - BARPLOT with VIBRANT COLORS
     if 'f3_f2_diff_mean' in df.columns:
-        plt.figure(figsize=(16, 8))
-        order = df.groupby('phoneme')['f3_f2_diff_mean'].mean().sort_values().index.tolist()
-        sns.barplot(data=df, x='phoneme', y='f3_f2_diff_mean', order=order, 
-                    hue='phoneme', palette='coolwarm', legend=False)
-        plt.title('F3-F2 Difference by Phoneme (Retroflexion Indicator)', fontsize=16, color='white')
-        plt.xlabel('Phoneme', fontsize=12)
-        plt.ylabel('F3 - F2 (Hz)', fontsize=12)
-        plt.xticks(rotation=45)
-        plt.axhline(y=df['f3_f2_diff_mean'].mean(), color='yellow', linestyle='--', alpha=0.5, label='Mean')
-        plt.legend()
+        fig, ax = plt.subplots(figsize=(18, 8))
+        fig.patch.set_facecolor(BG_COLOR)
+        ax.set_facecolor(BG_COLOR)
+        
+        sorted_df = df.sort_values('f3_f2_diff_mean')
+        n = len(sorted_df)
+        rainbow_colors = plt.cm.rainbow(np.linspace(0, 1, n))
+        
+        bars = ax.bar(range(n), sorted_df['f3_f2_diff_mean'].values,
+                      color=rainbow_colors, edgecolor='white', linewidth=1.5, alpha=0.9)
+        
+        ax.set_xticks(range(n))
+        ax.set_xticklabels(sorted_df['phoneme'].values, fontsize=11, rotation=45, ha='right')
+        ax.set_title('F3-F2 Difference by Phoneme (Retroflexion Indicator)', fontsize=18, color=TEXT_COLOR, fontweight='bold')
+        ax.set_xlabel('Phoneme', fontsize=14, color=TEXT_COLOR)
+        ax.set_ylabel('F3 - F2 (Hz)', fontsize=14, color=TEXT_COLOR)
+        ax.tick_params(colors=TEXT_COLOR, labelsize=11)
+        ax.axhline(y=df['f3_f2_diff_mean'].mean(), color=ACCENT_COLOR, linestyle='--', 
+                   linewidth=2, alpha=0.9, label='Mean')
+        ax.legend(facecolor=BG_COLOR, edgecolor=BORDER_COLOR, labelcolor=TEXT_COLOR)
+        ax.grid(True, axis='y', alpha=0.15, color='white')
+        for spine in ax.spines.values():
+            spine.set_color(BORDER_COLOR)
+            spine.set_linewidth(1)
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/04_f3_f2_diff_retroflexion.png", dpi=300, facecolor='#1a1a1a')
+        plt.savefig(f"{output_dir}/04_f3_f2_diff_retroflexion.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
         plt.close()
     
     # 5. Separation Check Plot for target vowels (A vs Ri analysis)
@@ -992,17 +1042,25 @@ def create_seaborn_golden_plots(df: pd.DataFrame, output_dir: str):
     subset = df[df['phoneme'].isin(target_phonemes)]
     
     if not subset.empty and 'f3_f2_diff_mean' in df.columns:
-        plt.figure(figsize=(12, 10))
+        fig, ax = plt.subplots(figsize=(12, 10))
+        fig.patch.set_facecolor(BG_COLOR)
+        ax.set_facecolor(BG_COLOR)
         sns.scatterplot(data=subset, x='f1_f2_ratio_mean', y='f3_f2_diff_mean', 
-                        hue='phoneme', style='phoneme', s=250, palette='bright')
-        
-        plt.title("Separation Check: 'A' (अ) vs 'Ri' (ॠ/ऋ)", fontsize=16, color='white')
-        plt.xlabel("F1 / F2 Ratio (Invariant Shape)", fontsize=12)
-        plt.ylabel("F3 - F2 Frequency Gap (Hz)", fontsize=12)
-        plt.axvline(x=0.41, color='gray', linestyle='--', alpha=0.5, label='Ratio Threshold')
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                        hue='phoneme', style='phoneme', s=300, palette='bright', ax=ax,
+                        edgecolor='white', linewidth=0.5)
+        ax.set_title("Separation Check: 'A' (अ) vs 'Ri' (ॠ/ऋ)", fontsize=18, color=TEXT_COLOR, fontweight='bold')
+        ax.set_xlabel("F1 / F2 Ratio (Invariant Shape)", fontsize=13, color=TEXT_COLOR)
+        ax.set_ylabel("F3 - F2 Frequency Gap (Hz)", fontsize=13, color=TEXT_COLOR)
+        ax.axvline(x=0.41, color=ACCENT_COLOR, linestyle='--', linewidth=2, alpha=0.9, label='Ratio Threshold')
+        ax.tick_params(colors=TEXT_COLOR, labelsize=11)
+        ax.grid(True, alpha=0.15, color='white')
+        for spine in ax.spines.values():
+            spine.set_color(BORDER_COLOR)
+            spine.set_linewidth(1)
+        legend = ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9,
+                           facecolor=BG_COLOR, edgecolor=BORDER_COLOR, labelcolor=TEXT_COLOR)
         plt.tight_layout()
-        plt.savefig(f"{output_dir}/05_separation_check_a_vs_ri.png", dpi=300, facecolor='#1a1a1a')
+        plt.savefig(f"{output_dir}/05_separation_check_a_vs_ri.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
         plt.close()
         
         # Print statistical verdict
