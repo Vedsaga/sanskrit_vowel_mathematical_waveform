@@ -99,10 +99,15 @@ def analyze_gunas(audio_path):
     
     y, sr = librosa.load(audio_path, sr=16000)
     
-    # Analyze middle chunk (stable state)
-    center = len(y) // 2
-    chunk_size = min(2000, len(y) // 2)  # ~125ms at 16kHz
-    chunk = y[center : center + chunk_size]
+    # Use middle 90% to avoid onset/offset noise (labels already padded by adjust_labels.py)
+    n_samples = len(y)
+    start_idx = int(n_samples * 0.25)
+    end_idx = int(n_samples * 0.75)
+    chunk = y[start_idx:end_idx]
+    
+    # Fallback if chunk is too small
+    if len(chunk) < 500:
+        chunk = y
     
     return {
         'sattva': calculate_fractal_dimension(chunk),
