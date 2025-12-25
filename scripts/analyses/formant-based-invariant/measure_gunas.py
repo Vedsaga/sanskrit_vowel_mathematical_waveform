@@ -92,20 +92,72 @@ def calculate_lyapunov(series):
         return 0
 
 
-def analyze_gunas(audio_path):
-    """Analyze a single audio file and return Gunas metrics."""
+def analyze_gunas(audio_path, stability_smoothing: float = 0.01, rms_threshold: float = 0.01):
+    """
+    Analyze a single audio file and return Gunas metrics.
+    Uses dynamic stability weighting - stable frames contribute more than transitional frames.
+    """
     if not HAS_LIBROSA:
         raise ImportError("librosa not installed. Run: pip install librosa")
     
     y, sr = librosa.load(audio_path, sr=16000)
     
-    # Use middle 90% to avoid onset/offset noise (labels already padded by adjust_labels.py)
-    n_samples = len(y)
-    start_idx = int(n_samples * 0.25)
-    end_idx = int(n_samples * 0.75)
-    chunk = y[start_idx:end_idx]
+    # Compute frame-level features for stability weighting
+    frame_length = 512
+    hop_length = 256
     
-    # Fallback if chunk is too small
+    # Calculate RMS energy per frame
+    rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+    
+    # Expand y to match frame indices
+    n_frames = len(rms)
+    if n_frames < 3:
+        # Fallback for very short audio
+        chunk = y
+    else:
+        # Calculate instability based on amplitude rate of change
+        instability = np.zeros(n_frames)
+        for i in range(n_frames):
+            if i == 0:
+                delta = abs(rms[1] - rms[0])
+            elif i == n_frames - 1:
+                delta = abs(rms[-1] - rms[-2])
+            else:
+                delta = abs(rms[i+1] - rms[i-1])
+            instability[i] = delta
+        
+        # Compute stability weights
+        weights = 1.0 / (instability + stability_smoothing)
+        weights[rms < rms_threshold] = 0.0  # Zero out silent frames
+        
+        if weights.sum() > 0:
+            weights = weights / weights.sum()
+        else:
+            weights = np.ones(n_frames) / n_frames
+        
+        # Select samples from high-weight frames
+        # Get indices of frames sorted by weight (descending)
+        top_frame_indices = np.argsort(weights)[::-1]
+        
+        # Collect samples from top-weighted frames (top 50% by weight)
+        cumulative_weight = 0
+        selected_samples = []
+        for frame_idx in top_frame_indices:
+            if cumulative_weight >= 0.9:  # Stop when we have 90% of weight
+                break
+            start_sample = frame_idx * hop_length
+            end_sample = min(start_sample + frame_length, len(y))
+            selected_samples.append(y[start_sample:end_sample])
+            cumulative_weight += weights[frame_idx]
+        
+        if selected_samples:
+            chunk = np.concatenate(selected_samples)
+        else:
+            # Fallback to middle 50% if weighting fails
+            n_samples = len(y)
+            chunk = y[int(n_samples * 0.25):int(n_samples * 0.75)]
+    
+    # Ensure minimum chunk size
     if len(chunk) < 500:
         chunk = y
     

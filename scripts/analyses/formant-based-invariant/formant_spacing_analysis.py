@@ -44,8 +44,12 @@ if os.path.exists(DEVANAGARI_FONT_PATH):
 
 
 def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int = 5,
-                      max_formant_freq: float = 5500.0, window_length: float = 0.025) -> dict:
-    """Extract formant frequencies (F1, F2, F3) from an audio file using Praat."""
+                      max_formant_freq: float = 5500.0, window_length: float = 0.025,
+                      stability_smoothing: float = 50.0, intensity_threshold: float = 50.0) -> dict:
+    """
+    Extract formant frequencies (F1, F2, F3) using Praat with dynamic stability weighting.
+    Frames with stable formants contribute more to the average than transitional frames.
+    """
     try:
         sound = parselmouth.Sound(audio_path)
         duration = sound.get_total_duration()
@@ -53,23 +57,27 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
         formant = call(sound, "To Formant (burg)",
                        time_step, max_formants, max_formant_freq, window_length, 50.0)
         
+        # Create Intensity object for low-energy filtering
+        intensity = call(sound, "To Intensity", 100, time_step, "yes")
+        
         n_frames = call(formant, "Get number of frames")
         
-        # Use middle 50% to avoid onset/offset noise
-        start_frame = max(1, int(n_frames * 0.25))
-        end_frame = min(n_frames, int(n_frames * 0.75))
+        # Pass 1: Collect ALL formant values for all frames
+        f1_values, f2_values, f3_values, time_values, intensity_values = [], [], [], [], []
         
-        if end_frame - start_frame < 3:
-            start_frame = 1
-            end_frame = n_frames
-        
-        f1_values, f2_values, f3_values, time_values = [], [], [], []
-        
-        for i in range(start_frame, end_frame + 1):
+        for i in range(1, n_frames + 1):
             t = call(formant, "Get time from frame number", i)
             f1 = call(formant, "Get value at time", 1, t, "Hertz", "Linear")
             f2 = call(formant, "Get value at time", 2, t, "Hertz", "Linear")
             f3 = call(formant, "Get value at time", 3, t, "Hertz", "Linear")
+            
+            # Get intensity at this time
+            try:
+                intens = call(intensity, "Get value at time", t, "Cubic")
+                if np.isnan(intens):
+                    intens = 0.0
+            except:
+                intens = 60.0
             
             if not np.isnan(f1) and not np.isnan(f2) and not np.isnan(f3):
                 if f1 > 0 and f2 > 0 and f3 > 0:
@@ -77,17 +85,57 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
                     f2_values.append(f2)
                     f3_values.append(f3)
                     time_values.append(t)
+                    intensity_values.append(intens)
         
-        if len(f1_values) == 0:
+        if len(f1_values) < 3:
             return None
         
-        f1_arr, f2_arr, f3_arr = np.array(f1_values), np.array(f2_values), np.array(f3_values)
+        f1_arr = np.array(f1_values)
+        f2_arr = np.array(f2_values)
+        f3_arr = np.array(f3_values)
+        intensity_arr = np.array(intensity_values)
+        
+        # Pass 2: Calculate stability weights based on formant rate of change
+        n = len(f1_arr)
+        instability = np.zeros(n)
+        
+        for i in range(n):
+            if i == 0:
+                delta_f1 = abs(f1_arr[1] - f1_arr[0])
+                delta_f2 = abs(f2_arr[1] - f2_arr[0])
+            elif i == n - 1:
+                delta_f1 = abs(f1_arr[n-1] - f1_arr[n-2])
+                delta_f2 = abs(f2_arr[n-1] - f2_arr[n-2])
+            else:
+                delta_f1 = abs(f1_arr[i+1] - f1_arr[i-1])
+                delta_f2 = abs(f2_arr[i+1] - f2_arr[i-1])
+            instability[i] = delta_f1 + delta_f2
+        
+        # Compute stability weights
+        weights = 1.0 / (instability + stability_smoothing)
+        weights[intensity_arr < intensity_threshold] = 0.0
+        
+        if weights.sum() > 0:
+            weights = weights / weights.sum()
+        else:
+            weights = np.ones(n) / n
+        
+        # Compute stability-weighted means
+        f1_weighted_mean = np.average(f1_arr, weights=weights)
+        f2_weighted_mean = np.average(f2_arr, weights=weights)
+        f3_weighted_mean = np.average(f3_arr, weights=weights)
+        
+        # Weighted variance
+        f1_weighted_var = np.average((f1_arr - f1_weighted_mean)**2, weights=weights)
+        f2_weighted_var = np.average((f2_arr - f2_weighted_mean)**2, weights=weights)
+        f3_weighted_var = np.average((f3_arr - f3_weighted_mean)**2, weights=weights)
         
         return {
-            'f1_mean': np.mean(f1_arr), 'f2_mean': np.mean(f2_arr), 'f3_mean': np.mean(f3_arr),
+            'f1_mean': f1_weighted_mean, 'f2_mean': f2_weighted_mean, 'f3_mean': f3_weighted_mean,
             'f1_median': np.median(f1_arr), 'f2_median': np.median(f2_arr), 'f3_median': np.median(f3_arr),
-            'f1_std': np.std(f1_arr), 'f2_std': np.std(f2_arr), 'f3_std': np.std(f3_arr),
+            'f1_std': np.sqrt(f1_weighted_var), 'f2_std': np.sqrt(f2_weighted_var), 'f3_std': np.sqrt(f3_weighted_var),
             'f1_values': f1_arr, 'f2_values': f2_arr, 'f3_values': f3_arr,
+            'stability_weights': weights,
             'n_frames': len(f1_values), 'duration': duration
         }
         
