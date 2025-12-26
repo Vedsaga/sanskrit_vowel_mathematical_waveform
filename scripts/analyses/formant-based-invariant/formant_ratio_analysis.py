@@ -37,6 +37,13 @@ except ImportError:
     def tqdm(iterable, **kwargs):
         return iterable
 
+# Import visualizer for integration
+try:
+    from formant_visualizer import generate_all_figures
+    HAS_VISUALIZER = True
+except ImportError:
+    HAS_VISUALIZER = False
+
 # Configure matplotlib to use Noto Sans Devanagari for proper script rendering
 DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
 if os.path.exists(DEVANAGARI_FONT_PATH):
@@ -1163,6 +1170,8 @@ Examples:
     
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for results (default: results/formant_ratio_analysis/{mode})')
+    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
+                        help='Skip generating visualization figures')
     
     args = parser.parse_args()
     
@@ -1234,6 +1243,30 @@ Examples:
                 
                 print(f"\nWorst match (F1/F2 ratio): {results_df.loc[worst_idx, 'filename']}")
                 print(f"  Difference: {results_df.loc[worst_idx, 'f1_f2_ratio_mean_pct_diff']:.2f}%")
+            
+            # Generate visualizations for ALL files in batch (parallel processing)
+            # Only generate figures relevant to ratio analysis: 1 (Temporal), 2 (Formant Structure), 4 (Ratios)
+            if HAS_VISUALIZER and not args.no_visual:
+                print(f"\nGenerating visualization figures for {len(results_df) + 1} files (parallel, 3 figs each)...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                
+                # Build file list: (audio_path, subfolder)
+                file_list = []
+                
+                # Add reference file
+                ref_filename = os.path.splitext(os.path.basename(args.reference))[0]
+                file_list.append((args.reference, ref_filename))
+                
+                # Add compared files
+                for _, row in results_df.iterrows():
+                    filename = os.path.splitext(row['filename'])[0]
+                    file_path = os.path.join(args.folder, row['filename'])
+                    if os.path.exists(file_path):
+                        file_list.append((file_path, filename))
+                
+                successful = generate_batch_figures(file_list, visual_base, workers=4, figures=[1, 2, 4])
+                print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     
     elif golden_mode:
         # Golden files comparison
@@ -1255,6 +1288,24 @@ Examples:
             # Show ratio statistics
             print(f"\nF1/F2 Ratio Range: {results_df['f1_f2_ratio_mean'].min():.3f} - {results_df['f1_f2_ratio_mean'].max():.3f}")
             print(f"F2/F3 Ratio Range: {results_df['f2_f3_ratio_mean'].min():.3f} - {results_df['f2_f3_ratio_mean'].max():.3f}")
+            
+            # Generate visualizations for ALL golden files (parallel processing)
+            # Only generate figures relevant to ratio analysis: 1 (Temporal), 2 (Formant Structure), 4 (Ratios)
+            if HAS_VISUALIZER and not args.no_visual and len(results_df) > 0:
+                print(f"\nGenerating visualization figures for {len(results_df)} files (parallel, 3 figs each)...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                
+                # Build file list: (audio_path, subfolder)
+                file_list = []
+                for _, row in results_df.iterrows():
+                    phoneme = row['phoneme']
+                    filename = os.path.splitext(row['filename'])[0]
+                    subfolder = os.path.join(phoneme, filename)
+                    file_list.append((row['file_path'], subfolder))
+                
+                successful = generate_batch_figures(file_list, visual_base, workers=4, figures=[1, 2, 4])
+                print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     
     else:
         # Single file comparison
@@ -1295,6 +1346,13 @@ Examples:
                 print("\n✓ HYPOTHESIS SUPPORTED: Ratios show better invariance than raw formants")
             else:
                 print("\n✗ HYPOTHESIS NOT SUPPORTED: Ratios do not show better invariance")
+            
+            # Generate visualizations for both files
+            if HAS_VISUALIZER and not args.no_visual:
+                print("\nGenerating visualization figures...")
+                visual_dir = os.path.join(output_dir, 'visual')
+                generate_all_figures(args.file1, os.path.join(visual_dir, 'file1'))
+                generate_all_figures(args.file2, os.path.join(visual_dir, 'file2'))
 
 
 if __name__ == "__main__":

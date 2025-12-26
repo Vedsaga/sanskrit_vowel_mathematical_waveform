@@ -36,6 +36,13 @@ except ImportError:
     def tqdm(iterable, **kwargs):
         return iterable
 
+# Import visualizer for integration
+try:
+    from formant_visualizer import generate_all_figures
+    HAS_VISUALIZER = True
+except ImportError:
+    HAS_VISUALIZER = False
+
 # Configure matplotlib for Devanagari
 DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
 if os.path.exists(DEVANAGARI_FONT_PATH):
@@ -808,6 +815,8 @@ Examples:
                         help='Path to cleaned data folder (for golden mode)')
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for results (default: results/formant_spacing_analysis/{mode})')
+    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
+                        help='Skip generating visualization figures')
     
     args = parser.parse_args()
     
@@ -865,6 +874,20 @@ Examples:
                 best_idx = results_df['norm_delta_f21_mean_pct_diff'].idxmin()
                 print(f"\nBest match: {results_df.loc[best_idx, 'filename']}")
                 print(f"  Norm ΔF21 diff: {results_df.loc[best_idx, 'norm_delta_f21_mean_pct_diff']:.2f}%")
+            
+            # Generate visualizations (Figures 1, 2, 3 for spacing analysis)
+            if HAS_VISUALIZER and not args.no_visual:
+                print(f"\nGenerating visualization figures for {len(results_df) + 1} files...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                file_list = [(args.reference, os.path.splitext(os.path.basename(args.reference))[0])]
+                for _, row in results_df.iterrows():
+                    filename = os.path.splitext(row['filename'])[0]
+                    file_path = os.path.join(args.folder, row['filename'])
+                    if os.path.exists(file_path):
+                        file_list.append((file_path, filename))
+                successful = generate_batch_figures(file_list, visual_base, figures=[1, 2, 3])
+                print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     
     elif golden_mode:
         if not os.path.isdir(args.golden_compare):
@@ -880,6 +903,20 @@ Examples:
             print(f"Phonemes analyzed: {len(results_df)}")
             print(f"\nNorm ΔF21 Range: {results_df['norm_delta_f21_mean'].min():.3f} - {results_df['norm_delta_f21_mean'].max():.3f}")
             print(f"Norm ΔF32 Range: {results_df['norm_delta_f32_mean'].min():.3f} - {results_df['norm_delta_f32_mean'].max():.3f}")
+            
+            # Generate visualizations (Figures 1, 2, 3 for spacing analysis)
+            if HAS_VISUALIZER and not args.no_visual:
+                print(f"\nGenerating visualization figures for {len(results_df)} files...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                file_list = []
+                for _, row in results_df.iterrows():
+                    phoneme = row['phoneme']
+                    filename = os.path.splitext(row['filename'])[0]
+                    subfolder = os.path.join(phoneme, filename)
+                    file_list.append((row['file_path'], subfolder))
+                successful = generate_batch_figures(file_list, visual_base, figures=[1, 2, 3])
+                print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     
     else:
         if not os.path.exists(args.file1):
@@ -915,6 +952,17 @@ Examples:
                 print("\n✓ HYPOTHESIS SUPPORTED: Normalized spacing shows better invariance")
             else:
                 print("\n✗ HYPOTHESIS NOT SUPPORTED: Normalized spacing does not show better invariance")
+            
+            # Generate visualizations for both files
+            if HAS_VISUALIZER and not args.no_visual:
+                print("\nGenerating visualization figures...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                file_list = [
+                    (args.file1, os.path.splitext(os.path.basename(args.file1))[0]),
+                    (args.file2, os.path.splitext(os.path.basename(args.file2))[0])
+                ]
+                generate_batch_figures(file_list, visual_base, figures=[1, 2, 3])
 
 
 if __name__ == "__main__":

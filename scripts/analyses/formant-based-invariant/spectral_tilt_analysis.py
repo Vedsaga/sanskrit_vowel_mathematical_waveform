@@ -37,6 +37,13 @@ except ImportError:
     def tqdm(iterable, **kwargs):
         return iterable
 
+# Import visualizer for integration
+try:
+    from formant_visualizer import generate_all_figures
+    HAS_VISUALIZER = True
+except ImportError:
+    HAS_VISUALIZER = False
+
 # Configure matplotlib for Devanagari
 DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
 if os.path.exists(DEVANAGARI_FONT_PATH):
@@ -938,6 +945,8 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
     
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for results')
+    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
+                        help='Skip generating visualization figures')
     
     args = parser.parse_args()
     
@@ -993,6 +1002,20 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
             print("BATCH ANALYSIS COMPLETE")
             print("=" * 60)
             print(f"Files compared: {len(results_df)}")
+            
+            # Generate visualizations (Figures 1, 5, 6 for spectral tilt)
+            if HAS_VISUALIZER and not args.no_visual:
+                print(f"\nGenerating visualization figures for {len(results_df) + 1} files...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                file_list = [(args.reference, os.path.splitext(os.path.basename(args.reference))[0])]
+                for _, row in results_df.iterrows():
+                    filename = os.path.splitext(row['filename'])[0]
+                    file_path = os.path.join(args.folder, row['filename'])
+                    if os.path.exists(file_path):
+                        file_list.append((file_path, filename))
+                successful = generate_batch_figures(file_list, visual_base, figures=[1, 5, 6])
+                print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     
     elif golden_mode:
         if not os.path.isdir(args.golden_compare):
@@ -1017,6 +1040,20 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
                 print("✓ HYPOTHESIS SUPPORTED: Higher F1 (open vowels) correlates with flatter tilt")
             else:
                 print("✗ HYPOTHESIS NOT SUPPORTED: Correlation is negative or zero")
+            
+            # Generate visualizations (Figures 1, 5, 6 for spectral tilt)
+            if HAS_VISUALIZER and not args.no_visual and len(results_df) > 0:
+                print(f"\nGenerating visualization figures for {len(results_df)} files...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                file_list = []
+                for _, row in results_df.iterrows():
+                    phoneme = row['phoneme']
+                    filename = os.path.splitext(row['filename'])[0]
+                    subfolder = os.path.join(phoneme, filename)
+                    file_list.append((row['file_path'], subfolder))
+                successful = generate_batch_figures(file_list, visual_base, figures=[1, 5, 6])
+                print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     
     else:
         if not os.path.exists(args.file1):
@@ -1033,6 +1070,17 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
             print("RESULTS SUMMARY")
             print("=" * 60)
             print(results_df.to_string(index=False))
+            
+            # Generate visualizations for both files
+            if HAS_VISUALIZER and not args.no_visual:
+                print("\nGenerating visualization figures...")
+                from formant_visualizer import generate_batch_figures
+                visual_base = os.path.join(output_dir, 'visual')
+                file_list = [
+                    (args.file1, os.path.splitext(os.path.basename(args.file1))[0]),
+                    (args.file2, os.path.splitext(os.path.basename(args.file2))[0])
+                ]
+                generate_batch_figures(file_list, visual_base, figures=[1, 5, 6])
 
 
 if __name__ == "__main__":
