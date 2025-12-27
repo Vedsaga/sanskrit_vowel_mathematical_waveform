@@ -40,6 +40,10 @@ from common import (
     HAS_TQDM
 )
 
+# Import seaborn for enhanced plotting (optional)
+if HAS_SEABORN:
+    import seaborn as sns
+
 # Configure matplotlib for Devanagari support
 configure_matplotlib()
 

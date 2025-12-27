@@ -36,6 +36,10 @@ from common import (
     HAS_TQDM
 )
 
+# Import seaborn for enhanced plotting (optional)
+if HAS_SEABORN:
+    import seaborn as sns
+
 # Configure matplotlib for Devanagari support
 configure_matplotlib()
 
@@ -845,7 +849,7 @@ Examples:
                     phoneme = row['phoneme']
                     filename = os.path.splitext(row['filename'])[0]
                     subfolder = os.path.join(phoneme, filename)
-                    file_list.append((row['file_path'], subfolder))
+                    file_list.append((row['filepath'], subfolder))
                 successful = generate_batch_figures(file_list, visual_base, figures=[1, 2, 3])
                 print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     
