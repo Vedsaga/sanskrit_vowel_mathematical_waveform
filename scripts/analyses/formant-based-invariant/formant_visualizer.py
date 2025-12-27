@@ -714,7 +714,7 @@ def figure_residual_dynamics(data, output_path, quiet=False):
     """
     
     ax.text(0.1, 0.9, summary, transform=ax.transAxes, fontsize=10,
-            verticalalignment='top', color=TEXT_COLOR, family='monospace',
+            verticalalignment='top', color=TEXT_COLOR,
             bbox=dict(boxstyle='round', facecolor=PANEL_COLOR, edgecolor=BORDER_COLOR))
     
     # Takeaway

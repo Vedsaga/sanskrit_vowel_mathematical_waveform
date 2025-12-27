@@ -386,7 +386,7 @@ def create_golden_plot(df, output_dir):
     """
     
     ax.text(0.1, 0.9, summary_text, transform=ax.transAxes, fontsize=12,
-            verticalalignment='top', color=TEXT_COLOR, family='monospace',
+            verticalalignment='top', color=TEXT_COLOR,
             bbox=dict(boxstyle='round', facecolor=BG_COLOR, edgecolor=BORDER_COLOR, linewidth=1))
     
     plt.tight_layout()
