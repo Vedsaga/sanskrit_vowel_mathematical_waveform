@@ -14,28 +14,31 @@ Hypothesis: These ratios should produce similar values across different speakers
 """
 
 import os
+import sys
 import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-import parselmouth
-from parselmouth.praat import call
 from pathlib import Path
 
-try:
-    import seaborn as sns
-    HAS_SEABORN = True
-except ImportError:
-    HAS_SEABORN = False
+# Add parent directory to path to import common package
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    def tqdm(iterable, **kwargs):
-        return iterable
+# Import from common package
+from common import (
+    configure_matplotlib,
+    extract_formants_with_weights,
+    apply_dark_theme,
+    create_styled_figure,
+    style_legend,
+    COLORS,
+    tqdm,
+    HAS_SEABORN,
+    HAS_TQDM
+)
+
+# Configure matplotlib for Devanagari support
+configure_matplotlib()
 
 # Import visualizer for integration
 try:
@@ -44,19 +47,14 @@ try:
 except ImportError:
     HAS_VISUALIZER = False
 
-# Configure matplotlib to use Noto Sans Devanagari for proper script rendering
-DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
-if os.path.exists(DEVANAGARI_FONT_PATH):
-    fm.fontManager.addfont(DEVANAGARI_FONT_PATH)
-    plt.rcParams['font.family'] = ['Noto Sans Devanagari', 'DejaVu Sans', 'sans-serif']
-
-
 
 def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int = 5,
                       max_formant_freq: float = 5500.0, window_length: float = 0.025,
                       stability_smoothing: float = 0.1, intensity_threshold: float = 50.0) -> dict:
     """
     Extract formant frequencies (F1, F2, F3) from an audio file using Praat algorithms.
+    
+    This is a thin wrapper around the canonical implementation in common.formant_extraction.
     
     Refined Method (Method 3):
     - Uses Joint Stability-Intensity Weighting (Intensity^2 / Instability)
@@ -69,144 +67,20 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
         max_formant_freq: Maximum formant frequency (Hz). Use ~5000 for male, ~5500 for female
         window_length: Analysis window length in seconds
         stability_smoothing: Smoothing constant for stability weight calculation
-        intensity_threshold: Minimum intensity (dB) (Legacy, replaced by soft gate)
+        intensity_threshold: Minimum intensity (dB) (Legacy, not used)
     
     Returns:
         Dictionary containing formant statistics with stability-weighted means
     """
-    try:
-        # Load the audio file with Praat
-        sound = parselmouth.Sound(audio_path)
-        duration = sound.get_total_duration()
-        
-        # Create a Formant object
-        formant = call(sound, "To Formant (burg)",
-                       time_step,       # Time step
-                       max_formants,    # Max number of formants
-                       max_formant_freq,  # Maximum formant frequency
-                       window_length,   # Window length
-                       50.0)            # Pre-emphasis from (Hz)
-        
-        # Create Intensity object
-        intensity = call(sound, "To Intensity", 100, time_step, "yes")
-        
-        # Get the number of frames
-        n_frames = call(formant, "Get number of frames")
-        
-        f1_values = []
-        f2_values = []
-        f3_values = []
-        time_values = []
-        intensity_values = []
-        
-        for i in range(1, n_frames + 1):
-            t = call(formant, "Get time from frame number", i)
-            f1 = call(formant, "Get value at time", 1, t, "Hertz", "Linear")
-            f2 = call(formant, "Get value at time", 2, t, "Hertz", "Linear")
-            f3 = call(formant, "Get value at time", 3, t, "Hertz", "Linear")
-            
-            # Get intensity
-            try:
-                intens = call(intensity, "Get value at time", t, "Cubic")
-                if np.isnan(intens): intens = 0.0
-            except:
-                intens = 0.0
-            
-            # Only include valid values
-            if not np.isnan(f1) and not np.isnan(f2) and not np.isnan(f3):
-                if f1 > 0 and f2 > 0 and f3 > 0:
-                    f1_values.append(f1)
-                    f2_values.append(f2)
-                    f3_values.append(f3)
-                    time_values.append(t)
-                    intensity_values.append(intens)
-        
-        if len(f1_values) < 3:
-            return None
-        
-        f1_arr = np.array(f1_values)
-        f2_arr = np.array(f2_values)
-        f3_arr = np.array(f3_values)
-        intensity_arr = np.array(intensity_values)
-        time_arr = np.array(time_values)
-        
-        # --- Compute Joint Stability-Intensity Weights ---
-        
-        # 1. Gradient (dF/dt)
-        dt = np.diff(time_arr)
-        dt = np.where(dt == 0, 1e-6, dt)
-        
-        df1 = np.abs(np.diff(f1_arr)) / dt
-        df2 = np.abs(np.diff(f2_arr)) / dt
-        df3 = np.abs(np.diff(f3_arr)) / dt
-        
-        # Pad derivatives
-        df1 = np.append(df1, df1[-1])
-        df2 = np.append(df2, df2[-1])
-        df3 = np.append(df3, df3[-1])
-        
-        # Normalized Instability: |dF/dt| / F
-        instability = (df1 / f1_arr) + (df2 / f2_arr) + (df3 / f3_arr)
-        
-        # 2. Weights
-        noise_floor = 50.0
-        soft_gate_threshold = 30.0
-        # stability_smoothing passed as arg, default 0.1
-        
-        w_intensity = np.maximum(0, intensity_arr - noise_floor) ** 2
-        w_stability = 1.0 / (instability + stability_smoothing)
-        gate_mask = intensity_arr >= soft_gate_threshold
-        
-        weights = w_intensity * w_stability * gate_mask
-        
-        # Fallback
-        if np.sum(weights) == 0:
-            weights = np.ones_like(intensity_arr)
-            
-        # Normalize weights
-        weights_norm = weights / np.sum(weights)
-        
-        # Diagnostics
-        sum_w = np.sum(weights)
-        sum_w_sq = np.sum(weights**2)
-        n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
-        confidence = np.clip(n_eff / len(f1_arr), 0, 1)
-        
-        # Compute stability-weighted means
-        f1_weighted_mean = np.average(f1_arr, weights=weights_norm)
-        f2_weighted_mean = np.average(f2_arr, weights=weights_norm)
-        f3_weighted_mean = np.average(f3_arr, weights=weights_norm)
-        
-        # Also compute weighted standard deviation
-        f1_weighted_var = np.average((f1_arr - f1_weighted_mean)**2, weights=weights_norm)
-        f2_weighted_var = np.average((f2_arr - f2_weighted_mean)**2, weights=weights_norm)
-        f3_weighted_var = np.average((f3_arr - f3_weighted_mean)**2, weights=weights_norm)
-        
-        return {
-            'f1_mean': f1_weighted_mean,
-            'f2_mean': f2_weighted_mean,
-            'f3_mean': f3_weighted_mean,
-            'f1_median': np.median(f1_arr), 
-            'f2_median': np.median(f2_arr),
-            'f3_median': np.median(f3_arr),
-            'f1_std': np.sqrt(f1_weighted_var),
-            'f2_std': np.sqrt(f2_weighted_var),
-            'f3_std': np.sqrt(f3_weighted_var),
-            'n_eff': n_eff,
-            'confidence': confidence,
-            'f1_values': f1_arr,
-            'f2_values': f2_arr,
-            'f3_values': f3_arr,
-            'time_values': time_arr,
-            'intensity_values': intensity_arr,
-            'stability_weights': weights,
-            'n_frames': len(f1_values),
-            'duration': duration
-        }
-        
-    except Exception as e:
-        print(f"Error extracting formants from {audio_path}: {e}")
-        return None
+    return extract_formants_with_weights(
+        audio_path=audio_path,
+        time_step=time_step,
+        max_formants=max_formants,
+        max_formant_freq=max_formant_freq,
+        window_length=window_length,
+        stability_smoothing=stability_smoothing,
+        return_raw_arrays=True
+    )
 
 
 def compute_formant_ratios(formant_data: dict) -> dict:
@@ -230,10 +104,10 @@ def compute_formant_ratios(formant_data: dict) -> dict:
     f2_mean = formant_data['f2_mean']
     f3_mean = formant_data['f3_mean']
     
-    # Use median values (more robust to outliers)
-    f1_med = formant_data['f1_median']
-    f2_med = formant_data['f2_median']
-    f3_med = formant_data['f3_median']
+    # Use median values (more robust to outliers) - Note: these are unweighted
+    f1_med = formant_data['f1_median_unweighted']
+    f2_med = formant_data['f2_median_unweighted']
+    f3_med = formant_data['f3_median_unweighted']
     
     # Linear ratios (using means)
     f1_f2_ratio_mean = f1_mean / f2_mean

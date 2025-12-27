@@ -42,12 +42,16 @@ def main():
         print("Error: Could not extract formants.")
         return
 
-    # 2. Get Raw Arrays
+    # 2. Get Raw Arrays and Weights
     f1_raw = data['f1_values']
     f2_raw = data['f2_values']
     f3_raw = data['f3_values']
     time = data['time_values']
-    weights = data['stability_weights']
+    weights = data['frame_weights']  # Renamed from stability_weights
+    weights_norm = data['frame_weights_norm']
+    weight_entropy = data.get('weight_entropy', 0)
+    n_eff = data.get('n_eff', 0)
+    confidence = data.get('confidence', 0)
     
     # 3. Calculate UNWEIGHTED Metrics (Simple Mean)
     f1_unweighted = np.mean(f1_raw)
@@ -69,7 +73,7 @@ def main():
 ==================================================
 WEIGHTING BIAS REPORT
 File: {os.path.basename(args.file)}
-Method: Joint Stability-Intensity Weighting
+Method: Joint Stability-Intensity Weighting (Improved)
 ==================================================
 
 METRIC      | WEIGHTED (New) | UNWEIGHTED (Raw) | DELTA (W - U)
@@ -78,10 +82,17 @@ F1 Mean     | {f1_weighted:8.2f} Hz | {f1_unweighted:8.2f} Hz   | {f1_delta:+8.2
 F2 Mean     | {f2_weighted:8.2f} Hz | {f2_unweighted:8.2f} Hz   | {f2_delta:+8.2f} Hz
 F3 Mean     | {f3_weighted:8.2f} Hz | {f3_unweighted:8.2f} Hz   | {f3_delta:+8.2f} Hz
 
+DIAGNOSTICS:
+--------------------------------------------------------------
+N_eff (Effective Frames) : {n_eff:8.2f} / {len(f1_raw)} total
+Confidence               : {confidence:8.4f}
+Weight Entropy (Norm)    : {weight_entropy:8.4f}  (0=concentrated, 1=uniform)
+
 INTERPRETATION:
 - A POSITIVE delta means weighting favors higher frequencies (likely ignoring low-freq onset).
 - A NEGATIVE delta means weighting favors lower frequencies.
 - The goal is for the weighted mean to be closer to the "steady state" target.
+- Low weight entropy indicates weights are concentrated on few frames.
 """
     print(report)
     

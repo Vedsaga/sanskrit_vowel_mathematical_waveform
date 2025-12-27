@@ -10,34 +10,33 @@ Hypothesis: Energy distribution patterns are invariant across speakers.
 """
 
 import os
+import sys
 import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import parselmouth
 from parselmouth.praat import call
 from pathlib import Path
 
-try:
-    import seaborn as sns
-    HAS_SEABORN = True
-except ImportError:
-    HAS_SEABORN = False
+# Add parent directory to path to import common package
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    def tqdm(iterable, **kwargs):
-        return iterable
+# Import from common package
+from common import (
+    configure_matplotlib,
+    compute_joint_weights,
+    apply_dark_theme,
+    create_styled_figure,
+    style_legend,
+    COLORS,
+    tqdm,
+    HAS_SEABORN,
+    HAS_TQDM
+)
 
-try:
-    from formant_visualizer import generate_all_figures
-    HAS_VISUALIZER = True
-except ImportError:
-    HAS_VISUALIZER = False
+# Configure matplotlib for Devanagari support
+configure_matplotlib()
 
 # Import visualizer for integration
 try:
@@ -45,12 +44,6 @@ try:
     HAS_VISUALIZER = True
 except ImportError:
     HAS_VISUALIZER = False
-
-# Configure matplotlib for Devanagari
-DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
-if os.path.exists(DEVANAGARI_FONT_PATH):
-    fm.fontManager.addfont(DEVANAGARI_FONT_PATH)
-    plt.rcParams['font.family'] = ['Noto Sans Devanagari', 'DejaVu Sans', 'sans-serif']
 
 
 def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_formants: int = 5,
@@ -157,27 +150,22 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
         
         # --- Compute Joint Stability-Intensity Weights ---
         
-        # 1. Gradient (dF/dt)
-        dt = np.diff(time_arr)
-        dt = np.where(dt == 0, 1e-6, dt)
+        # 1. Gradient (dF/dt) using np.gradient for proper edge handling
+        df1 = np.abs(np.gradient(f1_arr, time_arr))
+        df2 = np.abs(np.gradient(f2_arr, time_arr))
+        df3 = np.abs(np.gradient(f3_arr, time_arr))
         
-        df1 = np.abs(np.diff(f1_arr)) / dt
-        df2 = np.abs(np.diff(f2_arr)) / dt
-        df3 = np.abs(np.diff(f3_arr)) / dt
-        
-        # Pad derivatives
-        df1 = np.append(df1, df1[-1])
-        df2 = np.append(df2, df2[-1])
-        df3 = np.append(df3, df3[-1])
-        
-        # Normalized Instability: |dF/dt| / F
+        # Normalized Instability: |dF/dt| / F (dimensionless)
         instability = (df1 / f1_arr) + (df2 / f2_arr) + (df3 / f3_arr)
         
-        # 2. Weights
+        # 2. Weights - Joint Stability-Intensity
         noise_floor = 50.0
         soft_gate_threshold = 30.0
+        intensity_clip_db = 30.0  # Clip to prevent burst dominance
+        intensity_exponent = 2.0
         
-        w_intensity = np.maximum(0, intensity_arr - noise_floor) ** 2
+        intensity_above_floor = np.clip(intensity_arr - noise_floor, 0, intensity_clip_db)
+        w_intensity = intensity_above_floor ** intensity_exponent
         w_stability = 1.0 / (instability + stability_smoothing)
         gate_mask = intensity_arr >= soft_gate_threshold
         
@@ -195,6 +183,11 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
         n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
         confidence = np.clip(n_eff / len(f1_arr), 0, 1)
         
+        # Weight entropy (0=concentrated, 1=uniform)
+        p = weights_norm
+        weight_entropy = -np.sum(p * np.log(p + 1e-12))
+        weight_entropy_norm = weight_entropy / np.log(len(p)) if len(p) > 1 else 0
+        
         # Compute amplitude ratios
         a1_a2_ratios = a1_arr / a2_arr
         a2_a3_ratios = a2_arr / a3_arr
@@ -210,11 +203,11 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
             else:
                 h1_h2_mean = np.mean(v_h1h2)
             h1_h2_std = np.std(v_h1h2)
-            h1_h2_median = np.median(v_h1h2)
+            h1_h2_median_unweighted = np.median(v_h1h2)
         else:
             h1_h2_mean = np.nan
             h1_h2_std = np.nan
-            h1_h2_median = np.nan
+            h1_h2_median_unweighted = np.nan
         
         return {
             'f1_mean': np.average(f1_arr, weights=weights_norm),
@@ -226,21 +219,23 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
             'a1_a2_ratio_mean': np.average(a1_a2_ratios, weights=weights_norm),
             'a2_a3_ratio_mean': np.average(a2_a3_ratios, weights=weights_norm),
             'a1_a3_ratio_mean': np.average(a1_a3_ratios, weights=weights_norm),
-            'a1_a2_ratio_median': np.median(a1_a2_ratios),
-            'a2_a3_ratio_median': np.median(a2_a3_ratios),
-            'a1_a3_ratio_median': np.median(a1_a3_ratios),
-            'a1_a2_ratio_std': np.std(a1_a2_ratios), # Weighted std optional but kept simple for now
+            'a1_a2_ratio_median_unweighted': np.median(a1_a2_ratios),
+            'a2_a3_ratio_median_unweighted': np.median(a2_a3_ratios),
+            'a1_a3_ratio_median_unweighted': np.median(a1_a3_ratios),
+            'a1_a2_ratio_std': np.std(a1_a2_ratios),
             'a2_a3_ratio_std': np.std(a2_a3_ratios),
             'h1_h2_mean': h1_h2_mean,
-            'h1_h2_median': h1_h2_median,
+            'h1_h2_median_unweighted': h1_h2_median_unweighted,
             'h1_h2_std': h1_h2_std,
             'log_a1_a2_mean': np.average(np.log(a1_a2_ratios), weights=weights_norm),
             'log_a2_a3_mean': np.average(np.log(a2_a3_ratios), weights=weights_norm),
             'n_frames': len(f1_values),
             'n_eff': n_eff,
             'confidence': confidence,
+            'weight_entropy': weight_entropy_norm,
             'duration': duration,
-            'stability_weights': weights,
+            'frame_weights': weights,
+            'frame_weights_norm': weights_norm,
             'a1_a2_ratios': a1_a2_ratios,
             'a2_a3_ratios': a2_a3_ratios,
         }

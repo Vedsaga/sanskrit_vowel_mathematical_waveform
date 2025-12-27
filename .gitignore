@@ -8,3 +8,4 @@ download_tracker.csv
 results/*
 data/01_raw/labels_padded/*
 outputs/*
+verification_results/*

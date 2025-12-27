@@ -122,7 +122,6 @@ def analyze_gunas(audio_path, stability_smoothing: float = 0.01, rms_threshold: 
         # Fallback for very short audio
         chunk = y
     else:
-    else:
         # Refined Method: Intensity-Only Weighting (Energy Weighting)
         # Gunas are post-spectral independent metrics, so we don't weight by formant stability.
         # We simply prioritize high-energy frames to avoid noise/silence.

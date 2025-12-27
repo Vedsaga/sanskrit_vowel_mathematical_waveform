@@ -19,35 +19,35 @@ Modes:
 """
 
 import os
+import sys
 import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import parselmouth
 from parselmouth.praat import call
 from pathlib import Path
 from scipy import stats
 
-try:
-    import seaborn as sns
-    HAS_SEABORN = True
-except ImportError:
-    HAS_SEABORN = False
+# Add parent directory to path to import common package
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    def tqdm(iterable, **kwargs):
-        return iterable
+# Import from common package
+from common import (
+    configure_matplotlib,
+    extract_raw_formant_trajectory,
+    compute_joint_weights,
+    apply_dark_theme,
+    create_styled_figure,
+    style_legend,
+    COLORS,
+    tqdm,
+    HAS_SEABORN,
+    HAS_TQDM
+)
 
-# Configure matplotlib to use Noto Sans Devanagari for proper script rendering
-DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
-if os.path.exists(DEVANAGARI_FONT_PATH):
-    fm.fontManager.addfont(DEVANAGARI_FONT_PATH)
-    plt.rcParams['font.family'] = ['Noto Sans Devanagari', 'DejaVu Sans', 'sans-serif']
+# Configure matplotlib for Devanagari support
+configure_matplotlib()
 
 
 def extract_formant_trajectory(audio_path: str, time_step: float = 0.01, max_formants: int = 5,
@@ -164,34 +164,25 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
     # --- Weighting Logic (Method 3: Joint Stability-Intensity) ---
     
     # 1. Calculate Instability (Frequency-Normalized)
-    # Calculate gradients (rate of change)
-    dt = np.diff(time)
-    dt = np.where(dt == 0, 1e-6, dt)  # Avoid division by zero
-    
-    # Compute derivative dF/dt
-    d_f1 = np.diff(f1) / dt
-    d_f2 = np.diff(f2) / dt
-    
-    # Pad derivatives to match length of arrays (duplicate last value)
-    d_f1 = np.append(d_f1, d_f1[-1])
-    d_f2 = np.append(d_f2, d_f2[-1])
+    # Using np.gradient for proper edge handling
+    d_f1 = np.gradient(f1, time)
+    d_f2 = np.gradient(f2, time)
     
     # Normalized instability: |dF/F|
     instability = (np.abs(d_f1) / f1) + (np.abs(d_f2) / f2)
     
-    # 2. Calculate Weights
+    # 2. Calculate Weights - Joint Stability-Intensity
     noise_floor = 50.0
-    epsilon = 1e-6
-    stability_smoothing = 0.1  # Tuning parameter
-    
-    # Soft Gate: Zero weight for very low intensity (silence/noise)
+    stability_smoothing = 0.1
     soft_gate_threshold = 30.0
+    intensity_clip_db = 30.0  # Clip to prevent burst dominance
+    intensity_exponent = 2.0
+    
     gate_mask = intensity >= soft_gate_threshold
     
-    # Intensity component: (Intensity - NoiseFloor)^2
-    w_intensity = np.maximum(0, intensity - noise_floor) ** 2
-    
-    # Stability component: 1 / (Instability + Epsilon)
+    # Clip intensity above floor to prevent single loud frames from dominating
+    intensity_above_floor = np.clip(intensity - noise_floor, 0, intensity_clip_db)
+    w_intensity = intensity_above_floor ** intensity_exponent
     w_stability = 1.0 / (instability + stability_smoothing)
     
     # Joint Weight
@@ -204,6 +195,14 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
             weights = np.ones_like(time)
         else:
             return None
+    
+    # Normalize weights
+    weights_norm = weights / np.sum(weights)
+    
+    # Weight entropy (0=concentrated, 1=uniform)
+    p = weights_norm
+    weight_entropy = -np.sum(p * np.log(p + 1e-12))
+    weight_entropy_norm = weight_entropy / np.log(len(p)) if len(p) > 1 else 0
 
     # --- Metrics Logic ---
 
@@ -274,6 +273,8 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
     
     # Frame rates
     d_distance = np.diff(f2_f1_distance)
+    dt = np.diff(time)
+    dt = np.where(dt == 0, 1e-6, dt)  # Avoid division by zero
     frame_rates = d_distance / dt
     
     return {
@@ -292,15 +293,15 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
         
         # Legacy/Debug Metrics (Unweighted)
         'convergence_rate_unweighted': convergence_rate_legacy,
-        # Legacy/Debug Metrics (Unweighted)
-        'convergence_rate_unweighted': convergence_rate_legacy,
         'convergence_p_value_unweighted': p_value_legacy,
         'convergence_p_value': p_value_legacy, # For backward compatibility
         
         # Diagnostics
         'n_eff': n_eff,
         'confidence': confidence,
-        'weights': weights,
+        'weight_entropy': weight_entropy_norm,
+        'frame_weights': weights,
+        'frame_weights_norm': weights_norm,
         
         # Frame-by-frame rates
         'frame_rates': frame_rates,

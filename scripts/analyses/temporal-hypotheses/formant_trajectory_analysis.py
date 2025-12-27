@@ -18,34 +18,34 @@ The script supports three analysis modes:
 """
 
 import os
+import sys
 import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import parselmouth
 from parselmouth.praat import call
 from pathlib import Path
 
-try:
-    import seaborn as sns
-    HAS_SEABORN = True
-except ImportError:
-    HAS_SEABORN = False
+# Add parent directory to path to import common package
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    def tqdm(iterable, **kwargs):
-        return iterable
+# Import from common package
+from common import (
+    configure_matplotlib,
+    extract_raw_formant_trajectory,
+    compute_joint_weights,
+    apply_dark_theme,
+    create_styled_figure,
+    style_legend,
+    COLORS,
+    tqdm,
+    HAS_SEABORN,
+    HAS_TQDM
+)
 
-# Configure matplotlib to use Noto Sans Devanagari for proper script rendering
-DEVANAGARI_FONT_PATH = '/usr/share/fonts/noto/NotoSansDevanagari-Regular.ttf'
-if os.path.exists(DEVANAGARI_FONT_PATH):
-    fm.fontManager.addfont(DEVANAGARI_FONT_PATH)
-    plt.rcParams['font.family'] = ['Noto Sans Devanagari', 'DejaVu Sans', 'sans-serif']
+# Configure matplotlib for Devanagari support
+configure_matplotlib()
 
 
 def extract_formant_trajectory(audio_path: str, time_step: float = 0.005, 
@@ -199,14 +199,16 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
                   (np.abs(df2_dt) / f2_safe) + \
                   (np.abs(df3_dt) / f3_safe)
     
-    # 2. Weights
+    # 2. Weights - Joint Stability-Intensity
     noise_floor = 50.0
-    epsilon = 1e-6
     stability_smoothing = 0.1
     soft_gate_threshold = 30.0
+    intensity_clip_db = 30.0  # Clip to prevent burst dominance
+    intensity_exponent = 2.0
     
     gate_mask = intensity >= soft_gate_threshold
-    w_intensity = np.maximum(0, intensity - noise_floor) ** 2
+    intensity_above_floor = np.clip(intensity - noise_floor, 0, intensity_clip_db)
+    w_intensity = intensity_above_floor ** intensity_exponent
     w_stability = 1.0 / (instability + stability_smoothing)
     
     weights = w_intensity * w_stability * gate_mask
@@ -223,6 +225,11 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
     sum_w_sq = np.sum(weights**2)
     n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
     confidence = np.clip(n_eff / n, 0, 1)
+    
+    # Weight entropy (0=concentrated, 1=uniform)
+    p = weights_norm
+    weight_entropy = -np.sum(p * np.log(p + 1e-12))
+    weight_entropy_norm = weight_entropy / np.log(len(p)) if len(p) > 1 else 0
 
     # === Second Derivatives (acceleration) ===
     d2f1_dt2 = np.gradient(df1_dt, t)
@@ -307,7 +314,9 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
         # Diagnostics
         'n_eff': n_eff,
         'confidence': confidence,
-        'weights': weights,
+        'weight_entropy': weight_entropy_norm,
+        'frame_weights': weights,
+        'frame_weights_norm': weights_norm,
         
         # Raw arrays for visualization
         'df1_dt': df1_dt,
