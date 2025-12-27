@@ -139,6 +139,11 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
     - d(|F2-F1|)/dt: Rate of change of distance (convergence rate)
     - Classification: CONVERGENT (negative rate), DIVERGENT (positive rate), STABLE
     
+    Refined Method (Method 3):
+    - Uses Joint Stability-Intensity Weighting for robust regression
+    - Weight = (max(0, intensity - 50)^2) / (instability + epsilon)
+    - Instability is frequency-normalized: sum(|dF/dt| / F)
+    
     Args:
         trajectory_data: Dictionary from extract_formant_trajectory()
     
@@ -151,24 +156,99 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
     f1 = trajectory_data['f1_values']
     f2 = trajectory_data['f2_values']
     time = trajectory_data['time_values']
+    intensity = trajectory_data['intensity_values']
     
     # Compute |F2-F1| distance at each time point
     f2_f1_distance = np.abs(f2 - f1)
     
-    # Compute the rate of change d(|F2-F1|)/dt using linear regression
-    # This gives a robust estimate of the overall convergence trend
-    slope, intercept, r_value, p_value, std_err = stats.linregress(time, f2_f1_distance)
-    convergence_rate = slope  # Hz/second
+    # --- Weighting Logic (Method 3: Joint Stability-Intensity) ---
     
-    # Also compute frame-by-frame derivatives for detailed analysis
+    # 1. Calculate Instability (Frequency-Normalized)
+    # Calculate gradients (rate of change)
     dt = np.diff(time)
-    d_distance = np.diff(f2_f1_distance)
+    dt = np.where(dt == 0, 1e-6, dt)  # Avoid division by zero
     
-    # Avoid division by zero
-    dt[dt == 0] = 1e-6
-    frame_rates = d_distance / dt
+    # Compute derivative dF/dt
+    d_f1 = np.diff(f1) / dt
+    d_f2 = np.diff(f2) / dt
     
-    # Classification based on convergence rate
+    # Pad derivatives to match length of arrays (duplicate last value)
+    d_f1 = np.append(d_f1, d_f1[-1])
+    d_f2 = np.append(d_f2, d_f2[-1])
+    
+    # Normalized instability: |dF/F|
+    instability = (np.abs(d_f1) / f1) + (np.abs(d_f2) / f2)
+    
+    # 2. Calculate Weights
+    noise_floor = 50.0
+    epsilon = 1e-6
+    stability_smoothing = 0.1  # Tuning parameter
+    
+    # Soft Gate: Zero weight for very low intensity (silence/noise)
+    soft_gate_threshold = 30.0
+    gate_mask = intensity >= soft_gate_threshold
+    
+    # Intensity component: (Intensity - NoiseFloor)^2
+    w_intensity = np.maximum(0, intensity - noise_floor) ** 2
+    
+    # Stability component: 1 / (Instability + Epsilon)
+    w_stability = 1.0 / (instability + stability_smoothing)
+    
+    # Joint Weight
+    weights = w_intensity * w_stability * gate_mask
+    
+    # Handle edge case where all weights are zero
+    if np.sum(weights) == 0:
+        # Fallback to unweighted if valid data exists, else return None
+        if len(time) > 0:
+            weights = np.ones_like(time)
+        else:
+            return None
+
+    # --- Metrics Logic ---
+
+    # 1. Weighted Regression (Primary Metric)
+    try:
+        # np.polyfit with weights (w=weights) minimizes weighted least squares
+        coeffs, cov = np.polyfit(time, f2_f1_distance, deg=1, w=weights, cov=True)
+        slope = coeffs[0]
+        intercept = coeffs[1]
+        
+        convergence_rate = slope
+        
+        # Calculate Weighted R-squared
+        predicted = slope * time + intercept
+        residuals = f2_f1_distance - predicted
+        weighted_ss_res = np.sum(weights * residuals**2)
+        weighted_mean = np.average(f2_f1_distance, weights=weights)
+        weighted_ss_tot = np.sum(weights * (f2_f1_distance - weighted_mean)**2)
+        
+        r_squared = 1 - (weighted_ss_res / weighted_ss_tot) if weighted_ss_tot > 0 else 0
+        
+    except Exception as e:
+        print(f"Weighted regression failed: {e}")
+        convergence_rate = 0.0
+        r_squared = 0.0
+        predicted = f2_f1_distance # Fallback
+
+    # 2. Unweighted Regression (Legacy/Debug Metric)
+    try:
+        slope_legacy, _, r_value_legacy, p_value_legacy, _ = stats.linregress(time, f2_f1_distance)
+        convergence_rate_legacy = slope_legacy
+    except:
+        convergence_rate_legacy = 0.0
+        p_value_legacy = 1.0
+
+    # 3. Diagnostics
+    sum_w = np.sum(weights)
+    sum_w_sq = np.sum(weights**2)
+    n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
+    
+    # Confidence Score: Min(Fraction of effective frames, Weight Entropy-ish metric)
+    n_total = len(time)
+    confidence = np.clip(n_eff / n_total, 0, 1)
+
+    # Classification based on WEIGHTED convergence rate
     # Threshold: 50 Hz/s is considered significant
     RATE_THRESHOLD = 50.0  # Hz/s
     
@@ -179,11 +259,11 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
     else:
         classification = "STABLE"
     
-    # Compute additional statistics
-    distance_mean = np.mean(f2_f1_distance)
-    distance_std = np.std(f2_f1_distance)
-    distance_start = f2_f1_distance[0]
-    distance_end = f2_f1_distance[-1]
+    # Compute additional statistics (Weighted)
+    distance_mean = np.average(f2_f1_distance, weights=weights)
+    distance_std = np.sqrt(np.average((f2_f1_distance - distance_mean)**2, weights=weights))
+    distance_start = predicted[0] 
+    distance_end = predicted[-1]
     distance_change = distance_end - distance_start
     
     # Normalized convergence (percentage change per second)
@@ -192,8 +272,12 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
     else:
         normalized_rate = 0.0
     
+    # Frame rates
+    d_distance = np.diff(f2_f1_distance)
+    frame_rates = d_distance / dt
+    
     return {
-        # Distance metrics
+        # Distance metrics (Weighted)
         'f2_f1_distance': f2_f1_distance,
         'f2_f1_distance_mean': distance_mean,
         'f2_f1_distance_std': distance_std,
@@ -201,11 +285,22 @@ def compute_convergence_metrics(trajectory_data: dict) -> dict:
         'f2_f1_distance_end': distance_end,
         'f2_f1_distance_change': distance_change,
         
-        # Convergence rate metrics
+        # Convergence rate metrics (Weighted)
         'convergence_rate': convergence_rate,  # Hz/second
         'convergence_rate_normalized': normalized_rate,  # %/second
-        'convergence_r_squared': r_value ** 2,
-        'convergence_p_value': p_value,
+        'convergence_r_squared': r_squared,
+        
+        # Legacy/Debug Metrics (Unweighted)
+        'convergence_rate_unweighted': convergence_rate_legacy,
+        # Legacy/Debug Metrics (Unweighted)
+        'convergence_rate_unweighted': convergence_rate_legacy,
+        'convergence_p_value_unweighted': p_value_legacy,
+        'convergence_p_value': p_value_legacy, # For backward compatibility
+        
+        # Diagnostics
+        'n_eff': n_eff,
+        'confidence': confidence,
+        'weights': weights,
         
         # Frame-by-frame rates
         'frame_rates': frame_rates,
@@ -260,6 +355,9 @@ def analyze_audio_file(audio_path: str) -> dict:
         'convergence_rate_normalized': metrics['convergence_rate_normalized'],
         'convergence_r_squared': metrics['convergence_r_squared'],
         'convergence_p_value': metrics['convergence_p_value'],
+        
+        'n_eff': metrics.get('n_eff', 0),
+        'confidence': metrics.get('confidence', 0),
         
         'classification': metrics['classification'],
         'analysis_duration': metrics['analysis_duration'],
@@ -332,6 +430,12 @@ def compare_two_files(file1_path: str, file2_path: str, output_dir: str) -> pd.D
     csv_path = os.path.join(output_dir, 'convergence_comparison.csv')
     df.to_csv(csv_path, index=False)
     print(f"\nResults saved to: {csv_path}")
+
+    # Print N_eff for verification
+    if 'n_eff' in result1:
+        print(f"File 1 Effective Frames (N_eff): {result1['n_eff']:.2f}")
+    if 'n_eff' in result2:
+        print(f"File 2 Effective Frames (N_eff): {result2['n_eff']:.2f}")
     
     # Create visualization
     create_comparison_plots(result1, result2, output_dir)

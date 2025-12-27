@@ -122,21 +122,18 @@ def analyze_gunas(audio_path, stability_smoothing: float = 0.01, rms_threshold: 
         # Fallback for very short audio
         chunk = y
     else:
-        # Calculate instability based on amplitude rate of change
-        instability = np.zeros(n_frames)
-        for i in range(n_frames):
-            if i == 0:
-                delta = abs(rms[1] - rms[0])
-            elif i == n_frames - 1:
-                delta = abs(rms[-1] - rms[-2])
-            else:
-                delta = abs(rms[i+1] - rms[i-1])
-            instability[i] = delta
+    else:
+        # Refined Method: Intensity-Only Weighting (Energy Weighting)
+        # Gunas are post-spectral independent metrics, so we don't weight by formant stability.
+        # We simply prioritize high-energy frames to avoid noise/silence.
         
-        # Compute stability weights
-        weights = 1.0 / (instability + stability_smoothing)
-        weights[rms < rms_threshold] = 0.0  # Zero out silent frames
+        # Weight = Energy = Amplitude^2
+        weights = rms**2
         
+        # Soft gate / Thresholding
+        weights[rms < rms_threshold] = 0.0
+        
+        # Normalize
         if weights.sum() > 0:
             weights = weights / weights.sum()
         else:

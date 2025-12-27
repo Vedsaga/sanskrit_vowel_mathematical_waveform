@@ -53,13 +53,14 @@ if os.path.exists(DEVANAGARI_FONT_PATH):
 
 def extract_formants_with_amplitudes(audio_path: str, time_step: float = 0.01, 
                                       max_formants: int = 5, max_formant_freq: float = 5500.0,
-                                      window_length: float = 0.025, stability_smoothing: float = 50.0,
+                                      window_length: float = 0.025, stability_smoothing: float = 0.1,
                                       intensity_threshold: float = 50.0) -> dict:
     """
     Extract formant frequencies and their amplitudes from an audio file.
     
-    Returns:
-        Dictionary containing formant statistics and amplitude data for tilt calculation
+    Refined Method (Method 3):
+    - Uses Joint Stability-Intensity Weighting (Intensity^2 / Instability)
+    - Computes weighted means for formants and bandwidths
     """
     try:
         sound = parselmouth.Sound(audio_path)
@@ -95,10 +96,9 @@ def extract_formants_with_amplitudes(audio_path: str, time_step: float = 0.01,
             
             try:
                 intens = call(intensity, "Get value at time", t, "Cubic")
-                if np.isnan(intens):
-                    intens = 0.0
+                if np.isnan(intens): intens = 0.0
             except:
-                intens = 60.0
+                intens = 0.0
             
             if not np.isnan(f1) and not np.isnan(f2) and not np.isnan(f3):
                 if f1 > 0 and f2 > 0 and f3 > 0:
@@ -121,38 +121,55 @@ def extract_formants_with_amplitudes(audio_path: str, time_step: float = 0.01,
         b2_arr = np.array(b2_values)
         b3_arr = np.array(b3_values)
         intensity_arr = np.array(intensity_values)
+        time_arr = np.array(time_values)
         
-        # Calculate stability weights
-        n = len(f1_arr)
-        instability = np.zeros(n)
+        # --- Compute Joint Stability-Intensity Weights ---
         
-        for i in range(n):
-            if i == 0:
-                delta_f1 = abs(f1_arr[1] - f1_arr[0])
-                delta_f2 = abs(f2_arr[1] - f2_arr[0])
-            elif i == n - 1:
-                delta_f1 = abs(f1_arr[n-1] - f1_arr[n-2])
-                delta_f2 = abs(f2_arr[n-1] - f2_arr[n-2])
-            else:
-                delta_f1 = abs(f1_arr[i+1] - f1_arr[i-1])
-                delta_f2 = abs(f2_arr[i+1] - f2_arr[i-1])
-            instability[i] = delta_f1 + delta_f2
+        # 1. Gradient (dF/dt)
+        dt = np.diff(time_arr)
+        dt = np.where(dt == 0, 1e-6, dt)
         
-        weights = 1.0 / (instability + stability_smoothing)
-        weights[intensity_arr < intensity_threshold] = 0.0
+        df1 = np.abs(np.diff(f1_arr)) / dt
+        df2 = np.abs(np.diff(f2_arr)) / dt
+        df3 = np.abs(np.diff(f3_arr)) / dt
         
-        if weights.sum() > 0:
-            weights = weights / weights.sum()
-        else:
-            weights = np.ones(n) / n
+        # Pad derivatives
+        df1 = np.append(df1, df1[-1])
+        df2 = np.append(df2, df2[-1])
+        df3 = np.append(df3, df3[-1])
+        
+        # Normalized Instability: |dF/dt| / F
+        instability = (df1 / f1_arr) + (df2 / f2_arr) + (df3 / f3_arr)
+        
+        # 2. Weights
+        noise_floor = 50.0
+        soft_gate_threshold = 30.0
+        
+        w_intensity = np.maximum(0, intensity_arr - noise_floor) ** 2
+        w_stability = 1.0 / (instability + stability_smoothing)
+        gate_mask = intensity_arr >= soft_gate_threshold
+        
+        weights = w_intensity * w_stability * gate_mask
+        
+        if np.sum(weights) == 0:
+            weights = np.ones_like(intensity_arr)
+            
+        # Normalize weights
+        weights_norm = weights / np.sum(weights)
+        
+        # Diagnostics
+        sum_w = np.sum(weights)
+        sum_w_sq = np.sum(weights**2)
+        n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
+        confidence = np.clip(n_eff / len(f1_arr), 0, 1)
         
         # Weighted means
-        f1_mean = np.average(f1_arr, weights=weights)
-        f2_mean = np.average(f2_arr, weights=weights)
-        f3_mean = np.average(f3_arr, weights=weights)
-        b1_mean = np.average(b1_arr, weights=weights)
-        b2_mean = np.average(b2_arr, weights=weights)
-        b3_mean = np.average(b3_arr, weights=weights)
+        f1_mean = np.average(f1_arr, weights=weights_norm)
+        f2_mean = np.average(f2_arr, weights=weights_norm)
+        f3_mean = np.average(f3_arr, weights=weights_norm)
+        b1_mean = np.average(b1_arr, weights=weights_norm)
+        b2_mean = np.average(b2_arr, weights=weights_norm)
+        b3_mean = np.average(b3_arr, weights=weights_norm)
         
         return {
             'f1_mean': f1_mean, 'f2_mean': f2_mean, 'f3_mean': f3_mean,
@@ -160,8 +177,10 @@ def extract_formants_with_amplitudes(audio_path: str, time_step: float = 0.01,
             'b1_mean': b1_mean, 'b2_mean': b2_mean, 'b3_mean': b3_mean,
             'f1_values': f1_arr, 'f2_values': f2_arr, 'f3_values': f3_arr,
             'b1_values': b1_arr, 'b2_values': b2_arr, 'b3_values': b3_arr,
-            'time_values': np.array(time_values),
+            'time_values': time_arr,
             'stability_weights': weights,
+            'n_eff': n_eff,
+            'confidence': confidence,
             'n_frames': len(f1_values),
             'duration': duration
         }

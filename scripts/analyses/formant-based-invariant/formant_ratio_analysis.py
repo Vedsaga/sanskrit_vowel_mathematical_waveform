@@ -54,10 +54,13 @@ if os.path.exists(DEVANAGARI_FONT_PATH):
 
 def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int = 5,
                       max_formant_freq: float = 5500.0, window_length: float = 0.025,
-                      stability_smoothing: float = 50.0, intensity_threshold: float = 50.0) -> dict:
+                      stability_smoothing: float = 0.1, intensity_threshold: float = 50.0) -> dict:
     """
     Extract formant frequencies (F1, F2, F3) from an audio file using Praat algorithms.
-    Uses dynamic stability weighting instead of static trimming.
+    
+    Refined Method (Method 3):
+    - Uses Joint Stability-Intensity Weighting (Intensity^2 / Instability)
+    - Computes weighted means and standard deviations
     
     Args:
         audio_path: Path to the audio file
@@ -65,8 +68,8 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
         max_formants: Maximum number of formants to extract
         max_formant_freq: Maximum formant frequency (Hz). Use ~5000 for male, ~5500 for female
         window_length: Analysis window length in seconds
-        stability_smoothing: Smoothing constant for stability weight calculation (Hz)
-        intensity_threshold: Minimum intensity (dB) for a frame to be considered
+        stability_smoothing: Smoothing constant for stability weight calculation
+        intensity_threshold: Minimum intensity (dB) (Legacy, replaced by soft gate)
     
     Returns:
         Dictionary containing formant statistics with stability-weighted means
@@ -84,13 +87,12 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
                        window_length,   # Window length
                        50.0)            # Pre-emphasis from (Hz)
         
-        # Create Intensity object for low-energy filtering
+        # Create Intensity object
         intensity = call(sound, "To Intensity", 100, time_step, "yes")
         
         # Get the number of frames
         n_frames = call(formant, "Get number of frames")
         
-        # Pass 1: Collect ALL formant values for all frames
         f1_values = []
         f2_values = []
         f3_values = []
@@ -103,15 +105,14 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
             f2 = call(formant, "Get value at time", 2, t, "Hertz", "Linear")
             f3 = call(formant, "Get value at time", 3, t, "Hertz", "Linear")
             
-            # Get intensity at this time
+            # Get intensity
             try:
                 intens = call(intensity, "Get value at time", t, "Cubic")
-                if np.isnan(intens):
-                    intens = 0.0
+                if np.isnan(intens): intens = 0.0
             except:
-                intens = 60.0  # Default if intensity extraction fails
+                intens = 0.0
             
-            # Only include valid (non-undefined) values
+            # Only include valid values
             if not np.isnan(f1) and not np.isnan(f2) and not np.isnan(f3):
                 if f1 > 0 and f2 > 0 and f3 > 0:
                     f1_values.append(f1)
@@ -127,64 +128,77 @@ def extract_formants(audio_path: str, time_step: float = 0.01, max_formants: int
         f2_arr = np.array(f2_values)
         f3_arr = np.array(f3_values)
         intensity_arr = np.array(intensity_values)
+        time_arr = np.array(time_values)
         
-        # Pass 2: Calculate stability weights based on formant rate of change
-        n = len(f1_arr)
-        instability = np.zeros(n)
+        # --- Compute Joint Stability-Intensity Weights ---
         
-        for i in range(n):
-            if i == 0:
-                # First frame: use forward difference
-                delta_f1 = abs(f1_arr[1] - f1_arr[0])
-                delta_f2 = abs(f2_arr[1] - f2_arr[0])
-            elif i == n - 1:
-                # Last frame: use backward difference
-                delta_f1 = abs(f1_arr[n-1] - f1_arr[n-2])
-                delta_f2 = abs(f2_arr[n-1] - f2_arr[n-2])
-            else:
-                # Middle frames: use central difference (neighbors)
-                delta_f1 = abs(f1_arr[i+1] - f1_arr[i-1])
-                delta_f2 = abs(f2_arr[i+1] - f2_arr[i-1])
+        # 1. Gradient (dF/dt)
+        dt = np.diff(time_arr)
+        dt = np.where(dt == 0, 1e-6, dt)
+        
+        df1 = np.abs(np.diff(f1_arr)) / dt
+        df2 = np.abs(np.diff(f2_arr)) / dt
+        df3 = np.abs(np.diff(f3_arr)) / dt
+        
+        # Pad derivatives
+        df1 = np.append(df1, df1[-1])
+        df2 = np.append(df2, df2[-1])
+        df3 = np.append(df3, df3[-1])
+        
+        # Normalized Instability: |dF/dt| / F
+        instability = (df1 / f1_arr) + (df2 / f2_arr) + (df3 / f3_arr)
+        
+        # 2. Weights
+        noise_floor = 50.0
+        soft_gate_threshold = 30.0
+        # stability_smoothing passed as arg, default 0.1
+        
+        w_intensity = np.maximum(0, intensity_arr - noise_floor) ** 2
+        w_stability = 1.0 / (instability + stability_smoothing)
+        gate_mask = intensity_arr >= soft_gate_threshold
+        
+        weights = w_intensity * w_stability * gate_mask
+        
+        # Fallback
+        if np.sum(weights) == 0:
+            weights = np.ones_like(intensity_arr)
             
-            instability[i] = delta_f1 + delta_f2
+        # Normalize weights
+        weights_norm = weights / np.sum(weights)
         
-        # Compute stability weights: weight = 1 / (instability + smoothing_constant)
-        weights = 1.0 / (instability + stability_smoothing)
-        
-        # Zero out weights for low-intensity frames (silence/noise)
-        weights[intensity_arr < intensity_threshold] = 0.0
-        
-        # Normalize weights to sum to 1 (for weighted average)
-        if weights.sum() > 0:
-            weights = weights / weights.sum()
-        else:
-            # Fallback to uniform weights if all weights are zero
-            weights = np.ones(n) / n
+        # Diagnostics
+        sum_w = np.sum(weights)
+        sum_w_sq = np.sum(weights**2)
+        n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
+        confidence = np.clip(n_eff / len(f1_arr), 0, 1)
         
         # Compute stability-weighted means
-        f1_weighted_mean = np.average(f1_arr, weights=weights)
-        f2_weighted_mean = np.average(f2_arr, weights=weights)
-        f3_weighted_mean = np.average(f3_arr, weights=weights)
+        f1_weighted_mean = np.average(f1_arr, weights=weights_norm)
+        f2_weighted_mean = np.average(f2_arr, weights=weights_norm)
+        f3_weighted_mean = np.average(f3_arr, weights=weights_norm)
         
         # Also compute weighted standard deviation
-        f1_weighted_var = np.average((f1_arr - f1_weighted_mean)**2, weights=weights)
-        f2_weighted_var = np.average((f2_arr - f2_weighted_mean)**2, weights=weights)
-        f3_weighted_var = np.average((f3_arr - f3_weighted_mean)**2, weights=weights)
+        f1_weighted_var = np.average((f1_arr - f1_weighted_mean)**2, weights=weights_norm)
+        f2_weighted_var = np.average((f2_arr - f2_weighted_mean)**2, weights=weights_norm)
+        f3_weighted_var = np.average((f3_arr - f3_weighted_mean)**2, weights=weights_norm)
         
         return {
             'f1_mean': f1_weighted_mean,
             'f2_mean': f2_weighted_mean,
             'f3_mean': f3_weighted_mean,
-            'f1_median': np.median(f1_arr),  # Median is unweighted (robust)
+            'f1_median': np.median(f1_arr), 
             'f2_median': np.median(f2_arr),
             'f3_median': np.median(f3_arr),
             'f1_std': np.sqrt(f1_weighted_var),
             'f2_std': np.sqrt(f2_weighted_var),
             'f3_std': np.sqrt(f3_weighted_var),
+            'n_eff': n_eff,
+            'confidence': confidence,
             'f1_values': f1_arr,
             'f2_values': f2_arr,
             'f3_values': f3_arr,
-            'time_values': np.array(time_values),
+            'time_values': time_arr,
+            'intensity_values': intensity_arr,
             'stability_weights': weights,
             'n_frames': len(f1_values),
             'duration': duration

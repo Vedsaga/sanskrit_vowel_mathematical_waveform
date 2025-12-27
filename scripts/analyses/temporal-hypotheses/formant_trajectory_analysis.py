@@ -160,6 +160,9 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
     - Trajectory length and smoothness
     - Settling time estimation
     
+    Refined Method (Method 3):
+    - Uses Joint Stability-Intensity Weighting for all statistical aggregates
+    
     Args:
         formant_data: Dictionary from extract_formant_trajectory()
     
@@ -173,6 +176,7 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
     f2 = formant_data['f2_values']
     f3 = formant_data['f3_values']
     t = formant_data['time_values']
+    intensity = formant_data['intensity_values']
     
     n = len(f1)
     if n < 5:
@@ -184,6 +188,42 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
     df2_dt = np.gradient(f2, t)
     df3_dt = np.gradient(f3, t)
     
+    # === Weighting Logic (Method 3) ===
+    # 1. Normalized Instability
+    # Avoid division by zero
+    f1_safe = np.where(f1 == 0, 1e-6, f1)
+    f2_safe = np.where(f2 == 0, 1e-6, f2)
+    f3_safe = np.where(f3 == 0, 1e-6, f3)
+    
+    instability = (np.abs(df1_dt) / f1_safe) + \
+                  (np.abs(df2_dt) / f2_safe) + \
+                  (np.abs(df3_dt) / f3_safe)
+    
+    # 2. Weights
+    noise_floor = 50.0
+    epsilon = 1e-6
+    stability_smoothing = 0.1
+    soft_gate_threshold = 30.0
+    
+    gate_mask = intensity >= soft_gate_threshold
+    w_intensity = np.maximum(0, intensity - noise_floor) ** 2
+    w_stability = 1.0 / (instability + stability_smoothing)
+    
+    weights = w_intensity * w_stability * gate_mask
+    
+    # Fallback if all weights zero
+    if np.sum(weights) == 0:
+        weights = np.ones_like(t)
+    
+    # Normalize weights for stats (sum to 1)
+    weights_norm = weights / np.sum(weights)
+    
+    # Diagnostics
+    sum_w = np.sum(weights)
+    sum_w_sq = np.sum(weights**2)
+    n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
+    confidence = np.clip(n_eff / n, 0, 1)
+
     # === Second Derivatives (acceleration) ===
     d2f1_dt2 = np.gradient(df1_dt, t)
     d2f2_dt2 = np.gradient(df2_dt, t)
@@ -192,73 +232,66 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
     velocity_magnitude = np.sqrt(df1_dt**2 + df2_dt**2)
     
     # === Curvature in F1-F2 plane ===
-    # κ = |x'y'' - y'x''| / (x'² + y'²)^(3/2)
-    # where x = F1, y = F2
     numerator = np.abs(df1_dt * d2f2_dt2 - df2_dt * d2f1_dt2)
     denominator = (df1_dt**2 + df2_dt**2)**(3/2)
     
-    # Avoid division by zero
     with np.errstate(divide='ignore', invalid='ignore'):
         curvature = np.where(denominator > 1e-10, numerator / denominator, 0)
     
     # === Trajectory Length in F1-F2 space ===
-    # Sum of Euclidean distances between consecutive points
     df1_steps = np.diff(f1)
     df2_steps = np.diff(f2)
     step_lengths = np.sqrt(df1_steps**2 + df2_steps**2)
     trajectory_length = np.sum(step_lengths)
     
     # === Smoothness Index ===
-    # Lower jerk (derivative of acceleration) = smoother trajectory
     jerk_f1 = np.gradient(d2f1_dt2, t)
     jerk_f2 = np.gradient(d2f2_dt2, t)
     jerk_magnitude = np.sqrt(jerk_f1**2 + jerk_f2**2)
-    smoothness_index = 1.0 / (1.0 + np.mean(jerk_magnitude) / 1e6)  # Normalized 0-1
+    # Weighted mean jerk for smoothness
+    mean_jerk = np.average(jerk_magnitude, weights=weights_norm)
+    smoothness_index = 1.0 / (1.0 + mean_jerk / 1e6)
     
-    # === Settling Time Estimation ===
-    # Find when velocity drops below 10% of max velocity
+    # === Settling Time Estimation (Weighted) ===
+    # Use weighted max velocity or similar?
+    # Keeping original logic for time-based metrics as they describe temporal shape
     max_velocity = np.max(velocity_magnitude)
     settling_threshold = 0.1 * max_velocity
-    
-    # Find first time velocity stays below threshold
     settled_mask = velocity_magnitude < settling_threshold
+    
     if np.any(settled_mask):
-        # Find the first sustained period below threshold
         settling_idx = np.argmax(settled_mask)
         settling_time = t[settling_idx] - t[0]
     else:
-        settling_time = t[-1] - t[0]  # Never fully settled
+        settling_time = t[-1] - t[0]
     
     # === Steady-state detection ===
-    # Middle 50% of the signal is considered potential steady-state
-    mid_start = n // 4
-    mid_end = 3 * n // 4
-    steady_state_velocity = np.mean(velocity_magnitude[mid_start:mid_end])
+    # Use weighted mean velocity? 
+    steady_state_velocity = np.average(velocity_magnitude, weights=weights_norm)
     
-    # === Direction changes (trajectory complexity) ===
-    # Count sign changes in velocity
+    # === Direction changes ===
     f1_direction_changes = np.sum(np.diff(np.sign(df1_dt)) != 0)
     f2_direction_changes = np.sum(np.diff(np.sign(df2_dt)) != 0)
     
     return {
-        # First derivatives (velocity)
-        'df1_dt_mean': np.mean(np.abs(df1_dt)),
-        'df2_dt_mean': np.mean(np.abs(df2_dt)),
-        'df3_dt_mean': np.mean(np.abs(df3_dt)),
+        # First derivatives (velocity) - WEIGHTED MEANS
+        'df1_dt_mean': np.average(np.abs(df1_dt), weights=weights_norm),
+        'df2_dt_mean': np.average(np.abs(df2_dt), weights=weights_norm),
+        'df3_dt_mean': np.average(np.abs(df3_dt), weights=weights_norm),
         'df1_dt_max': np.max(np.abs(df1_dt)),
         'df2_dt_max': np.max(np.abs(df2_dt)),
-        'df1_dt_std': np.std(df1_dt),
-        'df2_dt_std': np.std(df2_dt),
+        'df1_dt_std': np.sqrt(np.average((df1_dt - np.average(df1_dt, weights=weights_norm))**2, weights=weights_norm)),
+        'df2_dt_std': np.sqrt(np.average((df2_dt - np.average(df2_dt, weights=weights_norm))**2, weights=weights_norm)),
         
-        # Velocity magnitude
-        'velocity_mean': np.mean(velocity_magnitude),
+        # Velocity magnitude - WEIGHTED MEANS
+        'velocity_mean': np.average(velocity_magnitude, weights=weights_norm),
         'velocity_max': np.max(velocity_magnitude),
-        'velocity_std': np.std(velocity_magnitude),
+        'velocity_std': np.sqrt(np.average((velocity_magnitude - np.average(velocity_magnitude, weights=weights_norm))**2, weights=weights_norm)),
         
-        # Curvature metrics
-        'curvature_mean': np.mean(curvature),
+        # Curvature metrics - WEIGHTED MEANS
+        'curvature_mean': np.average(curvature, weights=weights_norm),
         'curvature_max': np.max(curvature),
-        'curvature_std': np.std(curvature),
+        'curvature_std': np.sqrt(np.average((curvature - np.average(curvature, weights=weights_norm))**2, weights=weights_norm)),
         
         # Trajectory shape metrics
         'trajectory_length': trajectory_length,
@@ -271,18 +304,23 @@ def compute_trajectory_metrics(formant_data: dict) -> dict:
         'f2_direction_changes': f2_direction_changes,
         'total_direction_changes': f1_direction_changes + f2_direction_changes,
         
+        # Diagnostics
+        'n_eff': n_eff,
+        'confidence': confidence,
+        'weights': weights,
+        
         # Raw arrays for visualization
         'df1_dt': df1_dt,
         'df2_dt': df2_dt,
         'curvature': curvature,
         'velocity_magnitude': velocity_magnitude,
         
-        # Basic formant stats for reference
-        'f1_mean': np.mean(f1),
-        'f2_mean': np.mean(f2),
-        'f3_mean': np.mean(f3),
-        'f1_std': np.std(f1),
-        'f2_std': np.std(f2),
+        # Basic formant stats (Weighted)
+        'f1_mean': np.average(f1, weights=weights_norm),
+        'f2_mean': np.average(f2, weights=weights_norm),
+        'f3_mean': np.average(f3, weights=weights_norm),
+        'f1_std': np.sqrt(np.average((f1 - np.average(f1, weights=weights_norm))**2, weights=weights_norm)),
+        'f2_std': np.sqrt(np.average((f2 - np.average(f2, weights=weights_norm))**2, weights=weights_norm)),
     }
 
 
@@ -385,6 +423,12 @@ def compare_two_files(file1_path: str, file2_path: str, output_dir: str) -> pd.D
     csv_path = os.path.join(output_dir, 'trajectory_comparison.csv')
     df.to_csv(csv_path, index=False)
     print(f"\nResults saved to: {csv_path}")
+
+    # Print N_eff for verification
+    if 'n_eff' in result1:
+        print(f"File 1 Effective Frames (N_eff): {result1['n_eff']:.2f}")
+    if 'n_eff' in result2:
+        print(f"File 2 Effective Frames (N_eff): {result2['n_eff']:.2f}")
     
     # Create visualization
     create_comparison_plots(result1, result2, output_dir)

@@ -68,7 +68,11 @@ def extract_formants_full(audio_path: str, time_step: float = 0.01, max_formants
                           max_formant_freq: float = 5500.0, window_length: float = 0.025,
                           intensity_threshold: float = 50.0) -> dict:
     """
-    Extract formant frequencies (F1, F2, F3) from an audio file for the ENTIRE duration.
+    Extract formant frequencies (F1, F2, F3) and compute frame weights.
+    
+    Refined Method (Method 3):
+    - Computes Joint Stability-Intensity Weights for the entire file
+    - These weights are returned for use in windowed analysis
     
     Args:
         audio_path: Path to the audio file
@@ -76,10 +80,10 @@ def extract_formants_full(audio_path: str, time_step: float = 0.01, max_formants
         max_formants: Maximum number of formants to extract
         max_formant_freq: Maximum formant frequency (Hz)
         window_length: Analysis window length in seconds
-        intensity_threshold: Minimum intensity (dB) for a frame to be considered
+        intensity_threshold: Minimum intensity (dB) (Legacy parameter, replaced by soft gate)
     
     Returns:
-        Dictionary containing full formant time-series data
+        Dictionary containing full formant time-series data and weights
     """
     try:
         # Load the audio file with Praat
@@ -94,13 +98,12 @@ def extract_formants_full(audio_path: str, time_step: float = 0.01, max_formants
                        window_length,
                        50.0)
         
-        # Create Intensity object for low-energy filtering
+        # Create Intensity object
         intensity = call(sound, "To Intensity", 100, time_step, "yes")
         
         # Get the number of frames
         n_frames = call(formant, "Get number of frames")
         
-        # Collect ALL formant values for all frames
         f1_values = []
         f2_values = []
         f3_values = []
@@ -113,15 +116,14 @@ def extract_formants_full(audio_path: str, time_step: float = 0.01, max_formants
             f2 = call(formant, "Get value at time", 2, t, "Hertz", "Linear")
             f3 = call(formant, "Get value at time", 3, t, "Hertz", "Linear")
             
-            # Get intensity at this time
+            # Get intensity
             try:
                 intens = call(intensity, "Get value at time", t, "Cubic")
-                if np.isnan(intens):
-                    intens = 0.0
+                if np.isnan(intens): intens = 0.0
             except:
-                intens = 60.0
+                intens = 0.0
             
-            # Only include valid (non-undefined) values
+            # Only include valid values
             if not np.isnan(f1) and not np.isnan(f2) and not np.isnan(f3):
                 if f1 > 0 and f2 > 0 and f3 > 0:
                     f1_values.append(f1)
@@ -133,13 +135,53 @@ def extract_formants_full(audio_path: str, time_step: float = 0.01, max_formants
         if len(f1_values) < 3:
             return None
         
+        f1_arr = np.array(f1_values)
+        f2_arr = np.array(f2_values)
+        f3_arr = np.array(f3_values)
+        time_arr = np.array(time_values)
+        intensity_arr = np.array(intensity_values)
+        
+        # --- Compute Joint Stability-Intensity Weights ---
+        
+        # 1. Gradient (dF/dt)
+        dt = np.diff(time_arr)
+        dt = np.where(dt == 0, 1e-6, dt)
+        
+        df1 = np.abs(np.diff(f1_arr)) / dt
+        df2 = np.abs(np.diff(f2_arr)) / dt
+        df3 = np.abs(np.diff(f3_arr)) / dt
+        
+        # Pad to match length
+        df1 = np.append(df1, df1[-1])
+        df2 = np.append(df2, df2[-1])
+        df3 = np.append(df3, df3[-1])
+        
+        # Normalized Instability
+        instability = (df1 / f1_arr) + (df2 / f2_arr) + (df3 / f3_arr)
+        
+        # 2. Weights
+        noise_floor = 50.0
+        stability_smoothing = 0.1
+        soft_gate_threshold = 30.0
+        
+        w_intensity = np.maximum(0, intensity_arr - noise_floor) ** 2
+        w_stability = 1.0 / (instability + stability_smoothing)
+        gate_mask = intensity_arr >= soft_gate_threshold
+        
+        weights = w_intensity * w_stability * gate_mask
+        
+        # Fallback
+        if np.sum(weights) == 0:
+            weights = np.ones_like(time_arr)
+        
         return {
-            'f1_values': np.array(f1_values),
-            'f2_values': np.array(f2_values),
-            'f3_values': np.array(f3_values),
-            'time_values': np.array(time_values),
-            'intensity_values': np.array(intensity_values),
-            'n_frames': len(f1_values),
+            'f1_values': f1_arr,
+            'f2_values': f2_arr,
+            'f3_values': f3_arr,
+            'time_values': time_arr,
+            'intensity_values': intensity_arr,
+            'weights': weights,
+            'n_frames': len(f1_arr),
             'duration': duration,
             'intensity_threshold': intensity_threshold
         }
@@ -151,15 +193,19 @@ def extract_formants_full(audio_path: str, time_step: float = 0.01, max_formants
 
 def compute_window_stability(formant_data: dict, start_pct: float, end_pct: float) -> dict:
     """
-    Compute stability metrics for a specific time window.
+    Compute weighted stability metrics for a specific time window.
+    
+    Refined Method (Method 3):
+    - Uses pre-computed joint weights for all stats (mean, std, var)
+    - Returns N_eff and Confidence
     
     Args:
-        formant_data: Dictionary containing full formant time-series
+        formant_data: Dictionary containing full formant time-series and weights
         start_pct: Start percentage of utterance (0-100)
         end_pct: End percentage of utterance (0-100)
     
     Returns:
-        Dictionary containing stability metrics for the window
+        Dictionary containing weighted stability metrics
     """
     if formant_data is None:
         return None
@@ -169,35 +215,56 @@ def compute_window_stability(formant_data: dict, start_pct: float, end_pct: floa
     f1_arr = formant_data['f1_values']
     f2_arr = formant_data['f2_values']
     f3_arr = formant_data['f3_values']
-    intensity_arr = formant_data['intensity_values']
-    threshold = formant_data['intensity_threshold']
+    weights_full = formant_data['weights']
     
     # Calculate time bounds
     start_time = duration * (start_pct / 100.0)
     end_time = duration * (end_pct / 100.0)
     
     # Select frames within the window
-    mask = (time_arr >= start_time) & (time_arr <= end_time) & (intensity_arr >= threshold)
+    # Note: We rely on weights for filtering, but time selection is still hard cutoff
+    mask = (time_arr >= start_time) & (time_arr <= end_time)
     
+    if np.sum(mask) < 2:
+        return None
+        
     f1_window = f1_arr[mask]
     f2_window = f2_arr[mask]
     f3_window = f3_arr[mask]
+    weights_window = weights_full[mask]
     
-    if len(f1_window) < 2:
+    # Check if we have any valid weights in this window
+    if np.sum(weights_window) == 0:
+        # If all weights zero (e.g. silence), fall back to uniform for this window?
+        # Or just return None/Undefined?
+        # Better to return None as this window has no valid speech info
         return None
+        
+    # Normalize weights for this window
+    weights_norm = weights_window / np.sum(weights_window)
     
-    # Compute stability metrics
-    f1_mean = np.mean(f1_window)
-    f2_mean = np.mean(f2_window)
-    f3_mean = np.mean(f3_window)
+    # Diagnostics
+    sum_w = np.sum(weights_window)
+    sum_w_sq = np.sum(weights_window**2)
+    n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
+    confidence = np.clip(n_eff / len(weights_window), 0, 1) if len(weights_window) > 0 else 0
     
-    f1_std = np.std(f1_window)
-    f2_std = np.std(f2_window)
-    f3_std = np.std(f3_window)
+    # Compute Weighted Mean
+    f1_mean = np.average(f1_window, weights=weights_norm)
+    f2_mean = np.average(f2_window, weights=weights_norm)
+    f3_mean = np.average(f3_window, weights=weights_norm)
     
-    f1_var = np.var(f1_window)
-    f2_var = np.var(f2_window)
-    f3_var = np.var(f3_window)
+    # Compute Weighted Variance
+    # Var = sum(w * (x - mean)^2) / sum(w)
+    # Since weights_norm sum to 1, term is just sum(w * (x-mean)^2)
+    f1_var = np.average((f1_window - f1_mean)**2, weights=weights_norm)
+    f2_var = np.average((f2_window - f2_mean)**2, weights=weights_norm)
+    f3_var = np.average((f3_window - f3_mean)**2, weights=weights_norm)
+    
+    # Weighted Standard Deviation
+    f1_std = np.sqrt(f1_var)
+    f2_std = np.sqrt(f2_var)
+    f3_std = np.sqrt(f3_var)
     
     # Coefficient of Variation (CV = σ/μ)
     f1_cv = (f1_std / f1_mean) * 100 if f1_mean > 0 else np.nan
@@ -211,18 +278,20 @@ def compute_window_stability(formant_data: dict, start_pct: float, end_pct: floa
         'start_pct': start_pct,
         'end_pct': end_pct,
         'n_frames': len(f1_window),
+        'n_eff': n_eff,
+        'confidence': confidence,
         
-        # Mean values
+        # Mean values (Weighted)
         'f1_mean': f1_mean,
         'f2_mean': f2_mean,
         'f3_mean': f3_mean,
         
-        # Standard deviation
+        # Standard deviation (Weighted)
         'f1_std': f1_std,
         'f2_std': f2_std,
         'f3_std': f3_std,
         
-        # Variance
+        # Variance (Weighted)
         'f1_var': f1_var,
         'f2_var': f2_var,
         'f3_var': f3_var,
@@ -342,6 +411,12 @@ def compare_two_files(file1_path: str, file2_path: str, output_dir: str) -> pd.D
     csv_path = os.path.join(output_dir, 'stability_comparison.csv')
     df.to_csv(csv_path, index=False)
     print(f"\nResults saved to: {csv_path}")
+
+    # Print N_eff for verification (using full utterance)
+    if result1['full_utterance'] and 'n_eff' in result1['full_utterance']:
+        print(f"File 1 Full Utterance Effective Frames (N_eff): {result1['full_utterance']['n_eff']:.2f}")
+    if result2['full_utterance'] and 'n_eff' in result2['full_utterance']:
+        print(f"File 2 Full Utterance Effective Frames (N_eff): {result2['full_utterance']['n_eff']:.2f}")
     
     # Create visualization
     create_comparison_plots(result1, result2, output_dir)

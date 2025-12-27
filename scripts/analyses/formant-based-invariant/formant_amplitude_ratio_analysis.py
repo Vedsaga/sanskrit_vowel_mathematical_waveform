@@ -55,11 +55,13 @@ if os.path.exists(DEVANAGARI_FONT_PATH):
 
 def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_formants: int = 5,
                               max_formant_freq: float = 5500.0, window_length: float = 0.025,
-                              stability_smoothing: float = 50.0, intensity_threshold: float = 50.0) -> dict:
+                              stability_smoothing: float = 0.1, intensity_threshold: float = 50.0) -> dict:
     """
     Extract formant amplitude ratios (A1/A2, A2/A3) and harmonic ratios (H1-H2).
     
-    Uses dynamic stability weighting for robust extraction.
+    Refined Method (Method 3):
+    - Uses Joint Stability-Intensity Weighting (Intensity^2 / Instability)
+    - Computes weighted means for amplitudes and spectral tilt
     """
     try:
         sound = parselmouth.Sound(audio_path)
@@ -102,14 +104,15 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
             # Get intensity at this time
             try:
                 intens = call(intensity, "Get value at time", t, "Cubic")
-                if np.isnan(intens):
-                    intens = 0.0
+                if np.isnan(intens): intens = 0.0
             except:
-                intens = 60.0
+                intens = 0.0
             
             # Estimate amplitudes at formant frequencies
             # Using inverse bandwidth as amplitude proxy (narrower = stronger)
-            if not np.isnan(f1) and not np.isnan(f2) and not np.isnan(f3):
+            if not np.isnan(f1) and not np.isnan(f2) and not np.isnan(f3) and \
+               not np.isnan(b1) and not np.isnan(b2) and not np.isnan(b3):
+                
                 if f1 > 0 and f2 > 0 and f3 > 0 and b1 > 0 and b2 > 0 and b3 > 0:
                     # Amplitude estimation: A ∝ 1/B (narrower bandwidth = higher amplitude)
                     a1 = 1.0 / b1
@@ -126,6 +129,7 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
                     intensity_values.append(intens)
                     
                     # H1-H2 calculation (spectral tilt)
+                    h1_h2_val = np.nan
                     try:
                         f0 = call(pitch, "Get value at time", t, "Hertz", "Linear")
                         if not np.isnan(f0) and f0 > 0:
@@ -133,9 +137,10 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
                             h1_amp = call(spectrum, "Get real value in bin", int(f0 * duration))
                             h2_amp = call(spectrum, "Get real value in bin", int(2 * f0 * duration))
                             if h1_amp > 0 and h2_amp > 0:
-                                h1_h2_values.append(20 * np.log10(h1_amp / h2_amp))
+                                h1_h2_val = 20 * np.log10(h1_amp / h2_amp)
                     except:
                         pass
+                    h1_h2_values.append(h1_h2_val)
         
         if len(f1_values) < 3:
             return None
@@ -147,57 +152,93 @@ def extract_amplitude_ratios(audio_path: str, time_step: float = 0.01, max_forma
         a2_arr = np.array(a2_values)
         a3_arr = np.array(a3_values)
         intensity_arr = np.array(intensity_values)
+        time_arr = np.array(time_values)
+        h1_h2_arr = np.array(h1_h2_values)
         
-        # Calculate stability weights
-        n = len(f1_arr)
-        instability = np.zeros(n)
+        # --- Compute Joint Stability-Intensity Weights ---
         
-        for i in range(n):
-            if i == 0:
-                delta_f1 = abs(f1_arr[1] - f1_arr[0])
-                delta_f2 = abs(f2_arr[1] - f2_arr[0])
-            elif i == n - 1:
-                delta_f1 = abs(f1_arr[n-1] - f1_arr[n-2])
-                delta_f2 = abs(f2_arr[n-1] - f2_arr[n-2])
-            else:
-                delta_f1 = abs(f1_arr[i+1] - f1_arr[i-1])
-                delta_f2 = abs(f2_arr[i+1] - f2_arr[i-1])
-            instability[i] = delta_f1 + delta_f2
+        # 1. Gradient (dF/dt)
+        dt = np.diff(time_arr)
+        dt = np.where(dt == 0, 1e-6, dt)
         
-        weights = 1.0 / (instability + stability_smoothing)
-        weights[intensity_arr < intensity_threshold] = 0.0
+        df1 = np.abs(np.diff(f1_arr)) / dt
+        df2 = np.abs(np.diff(f2_arr)) / dt
+        df3 = np.abs(np.diff(f3_arr)) / dt
         
-        if weights.sum() > 0:
-            weights = weights / weights.sum()
-        else:
-            weights = np.ones(n) / n
+        # Pad derivatives
+        df1 = np.append(df1, df1[-1])
+        df2 = np.append(df2, df2[-1])
+        df3 = np.append(df3, df3[-1])
+        
+        # Normalized Instability: |dF/dt| / F
+        instability = (df1 / f1_arr) + (df2 / f2_arr) + (df3 / f3_arr)
+        
+        # 2. Weights
+        noise_floor = 50.0
+        soft_gate_threshold = 30.0
+        
+        w_intensity = np.maximum(0, intensity_arr - noise_floor) ** 2
+        w_stability = 1.0 / (instability + stability_smoothing)
+        gate_mask = intensity_arr >= soft_gate_threshold
+        
+        weights = w_intensity * w_stability * gate_mask
+        
+        if np.sum(weights) == 0:
+            weights = np.ones_like(intensity_arr)
+            
+        # Normalize weights
+        weights_norm = weights / np.sum(weights)
+        
+        # Diagnostics
+        sum_w = np.sum(weights)
+        sum_w_sq = np.sum(weights**2)
+        n_eff = (sum_w**2) / sum_w_sq if sum_w_sq > 0 else 0
+        confidence = np.clip(n_eff / len(f1_arr), 0, 1)
         
         # Compute amplitude ratios
         a1_a2_ratios = a1_arr / a2_arr
         a2_a3_ratios = a2_arr / a3_arr
         a1_a3_ratios = a1_arr / a3_arr
         
+        # Weighted mean for H1-H2 (ignoring NaNs)
+        h1_h2_mask = ~np.isnan(h1_h2_arr)
+        if np.sum(h1_h2_mask) > 0:
+            w_h1h2 = weights[h1_h2_mask]
+            v_h1h2 = h1_h2_arr[h1_h2_mask]
+            if np.sum(w_h1h2) > 0:
+                h1_h2_mean = np.average(v_h1h2, weights=w_h1h2)
+            else:
+                h1_h2_mean = np.mean(v_h1h2)
+            h1_h2_std = np.std(v_h1h2)
+            h1_h2_median = np.median(v_h1h2)
+        else:
+            h1_h2_mean = np.nan
+            h1_h2_std = np.nan
+            h1_h2_median = np.nan
+        
         return {
-            'f1_mean': np.average(f1_arr, weights=weights),
-            'f2_mean': np.average(f2_arr, weights=weights),
-            'f3_mean': np.average(f3_arr, weights=weights),
-            'a1_mean': np.average(a1_arr, weights=weights),
-            'a2_mean': np.average(a2_arr, weights=weights),
-            'a3_mean': np.average(a3_arr, weights=weights),
-            'a1_a2_ratio_mean': np.average(a1_a2_ratios, weights=weights),
-            'a2_a3_ratio_mean': np.average(a2_a3_ratios, weights=weights),
-            'a1_a3_ratio_mean': np.average(a1_a3_ratios, weights=weights),
+            'f1_mean': np.average(f1_arr, weights=weights_norm),
+            'f2_mean': np.average(f2_arr, weights=weights_norm),
+            'f3_mean': np.average(f3_arr, weights=weights_norm),
+            'a1_mean': np.average(a1_arr, weights=weights_norm),
+            'a2_mean': np.average(a2_arr, weights=weights_norm),
+            'a3_mean': np.average(a3_arr, weights=weights_norm),
+            'a1_a2_ratio_mean': np.average(a1_a2_ratios, weights=weights_norm),
+            'a2_a3_ratio_mean': np.average(a2_a3_ratios, weights=weights_norm),
+            'a1_a3_ratio_mean': np.average(a1_a3_ratios, weights=weights_norm),
             'a1_a2_ratio_median': np.median(a1_a2_ratios),
             'a2_a3_ratio_median': np.median(a2_a3_ratios),
             'a1_a3_ratio_median': np.median(a1_a3_ratios),
-            'a1_a2_ratio_std': np.std(a1_a2_ratios),
+            'a1_a2_ratio_std': np.std(a1_a2_ratios), # Weighted std optional but kept simple for now
             'a2_a3_ratio_std': np.std(a2_a3_ratios),
-            'h1_h2_mean': np.mean(h1_h2_values) if h1_h2_values else np.nan,
-            'h1_h2_median': np.median(h1_h2_values) if h1_h2_values else np.nan,
-            'h1_h2_std': np.std(h1_h2_values) if h1_h2_values else np.nan,
-            'log_a1_a2_mean': np.average(np.log(a1_a2_ratios), weights=weights),
-            'log_a2_a3_mean': np.average(np.log(a2_a3_ratios), weights=weights),
+            'h1_h2_mean': h1_h2_mean,
+            'h1_h2_median': h1_h2_median,
+            'h1_h2_std': h1_h2_std,
+            'log_a1_a2_mean': np.average(np.log(a1_a2_ratios), weights=weights_norm),
+            'log_a2_a3_mean': np.average(np.log(a2_a3_ratios), weights=weights_norm),
             'n_frames': len(f1_values),
+            'n_eff': n_eff,
+            'confidence': confidence,
             'duration': duration,
             'stability_weights': weights,
             'a1_a2_ratios': a1_a2_ratios,
