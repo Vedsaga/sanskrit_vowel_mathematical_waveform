@@ -4,7 +4,7 @@ import subprocess
 from collections import defaultdict
 
 # --- Configuration ---
-LABELS_FOLDER = "data/01_raw/labels_refined/"
+LABELS_FOLDER = "data/01_raw/labels_refined_v2/"
 NORMALIZED_AUDIO_FOLDER = "data/01_raw/normalized/"
 CLEANED_SAMPLES_FOLDER = "data/02_cleaned/"
 

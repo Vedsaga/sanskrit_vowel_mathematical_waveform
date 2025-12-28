@@ -93,16 +93,22 @@ def find_voiced_regions(
     time_arr: np.ndarray,
     intensity_arr: np.ndarray,
     intensity_threshold: float = 40.0,
-    min_gap_duration: float = 0.05
+    min_gap_duration: float = 0.05,
+    relative_dip_threshold: float = 15.0
 ) -> list:
     """
     Find contiguous voiced regions where intensity is above threshold.
+    
+    This improved version also detects RELATIVE dips in intensity, not just
+    absolute threshold crossings. This helps split regions when intensity
+    drops significantly but doesn't go below the absolute threshold.
     
     Args:
         time_arr: Array of time values
         intensity_arr: Array of intensity values (dB)
         intensity_threshold: Minimum intensity to be considered voiced (dB)
         min_gap_duration: Minimum gap duration to split regions (seconds)
+        relative_dip_threshold: Minimum relative dip to split regions (dB)
     
     Returns:
         List of (start_time, end_time) tuples for each voiced region
@@ -116,34 +122,66 @@ def find_voiced_regions(
     if not np.any(above_threshold):
         return []
     
-    # Find transitions
+    dt = np.median(np.diff(time_arr)) if len(time_arr) > 1 else 0.01
+    
+    # Also detect relative dips (valleys in the intensity curve)
+    # A "dip" is where intensity drops significantly from surrounding peaks
+    
+    # Smooth intensity slightly for robust valley detection
+    from scipy.ndimage import uniform_filter1d
+    smoothed = uniform_filter1d(intensity_arr, size=3)
+    
+    # Find local minima that represent significant dips
+    dip_mask = np.zeros(len(intensity_arr), dtype=bool)
+    
+    for i in range(1, len(smoothed) - 1):
+        # Check if this is a local minimum
+        if smoothed[i] < smoothed[i-1] and smoothed[i] < smoothed[i+1]:
+            # Find peaks on either side within a window
+            window = int(0.1 / dt)  # 100ms window
+            left_start = max(0, i - window)
+            right_end = min(len(smoothed), i + window)
+            
+            left_peak = np.max(smoothed[left_start:i]) if i > left_start else smoothed[i]
+            right_peak = np.max(smoothed[i+1:right_end]) if right_end > i+1 else smoothed[i]
+            
+            # Calculate dip depth relative to surrounding peaks
+            left_dip = left_peak - smoothed[i]
+            right_dip = right_peak - smoothed[i]
+            
+            # If dip is significant on BOTH sides, mark it as a boundary
+            if left_dip >= relative_dip_threshold and right_dip >= relative_dip_threshold:
+                # Mark a small region around this dip as a gap
+                gap_start = max(0, i - int(min_gap_duration / dt / 2))
+                gap_end = min(len(dip_mask), i + int(min_gap_duration / dt / 2) + 1)
+                dip_mask[gap_start:gap_end] = True
+    
+    # Combine: a frame is "in voiced region" if above threshold AND not in a dip
+    voiced = above_threshold & ~dip_mask
+    
+    # Find contiguous regions
     regions = []
     in_region = False
     region_start = None
-    last_above_time = None
+    last_voiced_time = None
     
-    dt = np.median(np.diff(time_arr)) if len(time_arr) > 1 else 0.01
-    
-    for i, (t, is_above) in enumerate(zip(time_arr, above_threshold)):
-        if is_above:
+    for i, (t, is_voiced) in enumerate(zip(time_arr, voiced)):
+        if is_voiced:
             if not in_region:
-                # Starting a new region
                 region_start = t
                 in_region = True
-            last_above_time = t
+            last_voiced_time = t
         else:
             if in_region:
-                # Check if gap is long enough to end region
-                gap_so_far = t - last_above_time
+                gap_so_far = t - last_voiced_time
                 if gap_so_far >= min_gap_duration:
-                    # End this region
-                    regions.append((region_start, last_above_time))
+                    regions.append((region_start, last_voiced_time))
                     in_region = False
                     region_start = None
     
     # Close final region if still open
     if in_region and region_start is not None:
-        regions.append((region_start, last_above_time))
+        regions.append((region_start, last_voiced_time))
     
     return regions
 
