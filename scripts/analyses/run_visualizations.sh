@@ -3,15 +3,11 @@
 # Configuration
 # =================================================================================================
 # Standard test files for verification
-# Using 043 (Akara) and 036 (Ikara) as standard golden files based on project conventions
 FILE1="data/02_cleaned/अ/अ_golden_043.wav"
 FILE2="data/02_cleaned/इ/इ_golden_036.wav"
-FOLDER="data/02_cleaned/अ"
-REFERENCE="data/02_cleaned/अ/अ_golden_043.wav"
 GOLDEN_DIR="data/02_cleaned"
 
-# List of 8 Analysis Scripts
-# =================================================================================================
+# List of Analysis Scripts
 SCRIPTS=(
     # Formant-based Invariant Hypotheses
     "scripts/analyses/formant-based-invariant/formant_ratio_analysis.py"
@@ -35,7 +31,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}=================================================================${NC}"
-echo -e "${BLUE}   SANSKRIT VOWEL ANALYSIS RUNNER   ${NC}"
+echo -e "${BLUE}   SANSKRIT VOWEL VISUALIZATION RUNNER   ${NC}"
 echo -e "${BLUE}=================================================================${NC}"
 echo -e "Start time: $(date)"
 echo -e "Scripts to run: ${#SCRIPTS[@]}"
@@ -44,12 +40,7 @@ echo
 # Check if data exists
 if [ ! -d "$GOLDEN_DIR" ]; then
     echo -e "${RED}Error: Data directory $GOLDEN_DIR not found.${NC}"
-    echo "Please ensure data is cleaned and available."
     exit 1
-fi
-
-if [ ! -f "$FILE1" ]; then
-    echo -e "${YELLOW}Warning: Test file $FILE1 not found. Single comparison mode might fail.${NC}"
 fi
 
 # Main Loop
@@ -57,23 +48,20 @@ fi
 for SCRIPT in "${SCRIPTS[@]}"; do
     SCRIPT_NAME=$(basename "$SCRIPT")
     echo -e "${YELLOW}-----------------------------------------------------------------${NC}"
-    echo -e "${GREEN}Running: $SCRIPT_NAME${NC}"
+    echo -e "${GREEN}Visualizing: $SCRIPT_NAME${NC}"
     echo -e "${YELLOW}-----------------------------------------------------------------${NC}"
 
     # 1. Single Comparison Mode
     echo -e "${BLUE}[Mode 1] Single File Comparison${NC}"
     if [ -f "$FILE1" ] && [ -f "$FILE2" ]; then
-        python3 "$SCRIPT" --file1 "$FILE1" --file2 "$FILE2"
+        python3 "$SCRIPT" --file1 "$FILE1" --file2 "$FILE2" --visualize
     else
-        echo "Skipping Single Mode (Files not found)"
+        echo "Skipping Single Mode"
     fi
     echo
 
     # 2. Batch Mode
     echo -e "${BLUE}[Mode 2] Batch Folder Analysis${NC}"
-
-    # Define phonemes and their corresponding golden reference files
-    # Format: "Phoneme|ReferenceFile"
     PHONEME_CONFIGS=(
         "अ|data/02_cleaned/अ/अ_golden_043.wav"
         "इ|data/02_cleaned/इ/इ_golden_036.wav"
@@ -84,29 +72,18 @@ for SCRIPT in "${SCRIPTS[@]}"; do
         IFS='|' read -r PHONEME REF_FILE <<< "$CONFIG"
         TARGET_FOLDER="data/02_cleaned/$PHONEME"
         
-        echo -e "${GREEN}  > Analyzing Phoneme: $PHONEME${NC}"
-        echo -e "    Folder: $TARGET_FOLDER"
-        echo -e "    Reference: $REF_FILE"
-
         if [ -d "$TARGET_FOLDER" ] && [ -f "$REF_FILE" ]; then
-            python3 "$SCRIPT" --folder "$TARGET_FOLDER" --reference "$REF_FILE"
-        else
-            echo -e "${RED}    Skipping (Folder or Reference not found)${NC}"
+            python3 "$SCRIPT" --folder "$TARGET_FOLDER" --reference "$REF_FILE" --visualize
         fi
-        echo ""
     done
     echo
 
     # 3. Golden Mode
     echo -e "${BLUE}[Mode 3] Golden Files Analysis${NC}"
     if [ -d "$GOLDEN_DIR" ]; then
-        python3 "$SCRIPT" --golden-compare "$GOLDEN_DIR"
-    else
-        echo "Skipping Golden Mode (Directory not found)"
+        python3 "$SCRIPT" --golden-compare "$GOLDEN_DIR" --visualize
     fi
     echo 
 done
 
-echo -e "${BLUE}=================================================================${NC}"
-echo -e "${GREEN}All analyses completed.${NC}"
-echo -e "${BLUE}=================================================================${NC}"
+echo -e "${GREEN}All visualizations completed.${NC}"

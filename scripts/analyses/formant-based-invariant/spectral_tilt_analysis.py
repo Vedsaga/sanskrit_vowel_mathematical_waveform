@@ -532,7 +532,7 @@ def create_comparison_plots(result1: dict, result2: dict, output_dir: str):
     print(f"Visualization saved to: {plot_path}")
 
 
-def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str) -> pd.DataFrame:
+def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str, visualize: bool = False) -> pd.DataFrame:
     """Compare all audio files in a folder against a pinned reference file."""
     import glob
     
@@ -589,7 +589,8 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
     df.to_csv(csv_path, index=False)
     print(f"\nResults saved to: {csv_path}")
     
-    create_batch_plots(ref_result, successful_results, df, output_dir)
+    if visualize and HAS_VISUALIZER:
+        create_batch_plots(ref_result, successful_results, df, output_dir)
     
     return df
 
@@ -964,8 +965,8 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
     
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for results')
-    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
-                        help='Skip generating visualization figures')
+    parser.add_argument('--visualize', action='store_true', dest='visualize',
+                        help='Generate visualization figures (opt-in)')
     
     args = parser.parse_args()
     
@@ -1014,7 +1015,11 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
         print(f"Folder: {args.folder}")
         print(f"Reference: {args.reference}")
         
-        results_df = batch_compare_folder(args.folder, args.reference, output_dir)
+        if not hasattr(args, 'visualize'):
+            print("DEBUG: args.visualize MISSING usually means parser issue")
+            args.visualize = False
+
+        results_df = batch_compare_folder(args.folder, args.reference, output_dir, visualize=args.visualize)
         
         if results_df is not None:
             print("\n" + "=" * 60)
@@ -1023,7 +1028,7 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
             print(f"Files compared: {len(results_df)}")
             
             # Generate visualizations (Figures 1, 5, 6 for spectral tilt)
-            if HAS_VISUALIZER and not args.no_visual:
+            if HAS_VISUALIZER and args.visualize:
                 print(f"\nGenerating visualization figures for {len(results_df) + 1} files...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')
@@ -1061,7 +1066,7 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
                 print("✗ HYPOTHESIS NOT SUPPORTED: Correlation is negative or zero")
             
             # Generate visualizations (Figures 1, 5, 6 for spectral tilt)
-            if HAS_VISUALIZER and not args.no_visual and len(results_df) > 0:
+            if HAS_VISUALIZER and args.visualize and len(results_df) > 0:
                 print(f"\nGenerating visualization figures for {len(results_df)} files...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')
@@ -1091,7 +1096,7 @@ Hypothesis: Open vowels (/a/) have flatter tilt than closed vowels (/i/)
             print(results_df.to_string(index=False))
             
             # Generate visualizations for both files
-            if HAS_VISUALIZER and not args.no_visual:
+            if HAS_VISUALIZER and args.visualize:
                 print("\nGenerating visualization figures...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')

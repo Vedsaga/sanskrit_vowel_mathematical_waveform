@@ -748,10 +748,10 @@ Examples:
     parser.add_argument('--reference', type=str, help='Path to reference file (for batch mode)')
     parser.add_argument('--golden-compare', type=str, dest='golden_compare',
                         help='Path to cleaned data folder (for golden mode)')
+    parser.add_argument('--visualize', action='store_true', dest='visualize',
+                        help='Generate visualization figures (opt-in)')
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for results (default: results/formant_spacing_analysis/{mode})')
-    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
-                        help='Skip generating visualization figures')
     
     args = parser.parse_args()
     
@@ -811,7 +811,7 @@ Examples:
                 print(f"  Norm ΔF21 diff: {results_df.loc[best_idx, 'norm_delta_f21_mean_pct_diff']:.2f}%")
             
             # Generate visualizations (Figures 1, 2, 3 for spacing analysis)
-            if HAS_VISUALIZER and not args.no_visual:
+            if HAS_VISUALIZER and args.visualize:
                 print(f"\nGenerating visualization figures for {len(results_df) + 1} files...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')

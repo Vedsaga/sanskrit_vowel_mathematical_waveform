@@ -172,30 +172,149 @@ def analyze_gunas(audio_path, stability_smoothing: float = 0.01, rms_threshold: 
 
 
 def analyze_folder(folder_path, output_dir):
-    """Analyze all audio files in a folder (e.g., all أ files)."""
+    """
+    Analyze all audio files in a folder (e.g., all أ files).
+    Parallel execution with result caching.
+    """
+    from common import process_batch_parallel
+    
     os.makedirs(output_dir, exist_ok=True)
     
     files = list(Path(folder_path).glob("*.wav"))
+    if not files:
+        print(f"Error: No .wav files found in {folder_path}")
+        return None
+        
     phoneme = os.path.basename(folder_path)
-    
     print(f"\nAnalyzing {len(files)} files in '{phoneme}' folder...")
     
-    records = []
-    for f in tqdm(files, desc=f"Processing {phoneme}"):
-        try:
-            result = analyze_gunas(str(f))
-            records.append({
-                'filename': f.name,
-                'phoneme': phoneme,
-                **result
-            })
-        except Exception as e:
-            continue
-    
-    df = pd.DataFrame(records)
-    
-    # Save CSV
+    # --- Check for existing results to skip ---
     csv_path = os.path.join(output_dir, f'{phoneme}_gunas.csv')
+    existing_df = None
+    processed_filenames = set()
+    
+    if os.path.exists(csv_path):
+        try:
+            existing_df = pd.read_csv(csv_path)
+            if 'filename' in existing_df.columns:
+                processed_filenames = set(existing_df['filename'].tolist())
+                print(f"Found existing results for {len(processed_filenames)} files. These will be skipped.")
+        except Exception as e:
+            print(f"Warning: Could not read existing results: {e}")
+            
+    # Filter files to process
+    files_to_process = []
+    skipped_count = 0
+    
+    for f in files:
+        if f.name in processed_filenames:
+            skipped_count += 1
+            continue
+        files_to_process.append(str(f)) # process_batch_parallel expects strings
+        
+    print(f"Files to process: {len(files_to_process)} (Skipped: {skipped_count})")
+    
+    # --- Parallel Execution ---
+    new_results = []
+    if files_to_process:
+        print(f"\nStarting parallel analysis execution...")
+        # analyze_gunas takes 'audio_path' as arg
+        new_results = process_batch_parallel(
+            files_to_process, 
+            analyze_gunas, 
+            output_dir, 
+            description=f"Processing {phoneme}"
+        )
+    
+    # Merge results
+    records = []
+    
+    # Process new results
+    for res in new_results:
+        # analyze_gunas returns dict with Sattva/Rajas/Tamas
+        # We need to add filename/phoneme
+        # But `res` from process_batch_parallel contains 'filename' already?
+        # Check process_batch_parallel implementation...
+        # It adds result of function. `analyze_gunas` returns dict.
+        # It *also* wraps exception, but assuming success...
+        # Wait, process_batch_parallel returns list of results.
+        # But `process_file` wrapper in it DOES NOT inject filename into the result unless the function does.
+        # `analyze_gunas` does NOT return filename (lines 167-171).
+        # Ah, `analyze_audio_file` in other scripts DID returns filename.
+        # So I have a problem: I don't know which file produced which result if I rely solely on the return value
+        # and if the order is not guaranteed (it IS guaranteed by `process_batch_parallel` map generally preserving order? 
+        # `executor.map` preserves order. `as_completed` does not.
+        # My `process_batch_parallel` uses `as_completed` then sorts? Or just `as_completed`.
+        # I need to check `batch_processing.py`.
+        # If I can't guarantee matching, I should modify `analyze_gunas` or wrap it.
+        # But I can't easily modify `analyze_gunas` without changing its signature everywhere.
+        # Better: use a wrapper lambda that adds filename?
+        # `process_batch_parallel` accepts `process_func`.
+        # I can pass a wrapper.
+        pass
+        
+    # Let's check `batch_processing.py` content from memory or read it.
+    # I modified it in Step 4.
+    # It takes `result = process_func(file_path)`.
+    # And it returns list of successful results.
+    # If the function doesn't return filename, I lose the mapping.
+    # I MUST update `analyze_gunas` to return filename or use a wrapper.
+    # Updating `analyze_gunas` is cleaner.
+    
+    # I will stick to result merging first.
+    
+    # Let's modify `analyze_gunas` first to return filename?
+    # No, I am editing `analyze_folder` here.
+    # I can define a local wrapper.
+    
+    def analyze_gunas_wrapper(fpath):
+        res = analyze_gunas(fpath)
+        if res:
+            res['filename'] = os.path.basename(fpath)
+            res['phoneme'] = phoneme
+        return res
+        
+    # But `process_batch_parallel` is imported.
+    # Can I pass a local function to `process_batch_parallel`? 
+    # `multiprocessing` pickles functions. Local functions are not picklable.
+    # So I must either:
+    # 1. Update `analyze_gunas` (Global function) to include filename.
+    # 2. Use a partial? `functools.partial` might work if `analyze_gunas` had an arg? No.
+    # 3. Use `analyze_gunas` as is, but realise I can't map back.
+    
+    # I will update `analyze_gunas` to return filename. It is safer.
+    # It is defined in the same file at line 102.
+    # I will proceed with updating `analyze_folder` ASSUMING `analyze_gunas` returns filename, 
+    # AND I will send a separate edit to update `analyze_gunas` concurrently.
+    
+    # Wait, I can do both edits in one `multi_replace` maybe? 
+    # No, `replace_file_content` is single block.
+    # `multi_replace_file_content` allows multiple chunks.
+    # I should use `multi_replace_file_content`.
+    
+    pass
+
+    
+    # Merge logic assuming `res` has `filename`
+    for res in new_results:
+        # ensure phoneme is set (it might not be if analyze_gunas only adds filename)
+        res['phoneme'] = phoneme 
+        records.append(res)
+        
+    # Convert to DF
+    if records:
+        new_df = pd.DataFrame(records)
+        if existing_df is not None:
+             df = pd.concat([existing_df, new_df], ignore_index=True)
+        else:
+             df = new_df
+    else:
+        df = existing_df
+        
+    if df is None or df.empty:
+        return None
+        
+    # Save CSV
     df.to_csv(csv_path, index=False)
     print(f"Data saved to: {csv_path}")
     
@@ -415,8 +534,8 @@ Examples:
                         help='Path to cleaned data directory for golden files')
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory (default: results/gunas_analysis/{mode})')
-    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
-                        help='Skip generating visualization figures')
+    parser.add_argument('--visualize', action='store_true', dest='visualize',
+                        help='Generate visualization figures (opt-in)')
     
     args = parser.parse_args()
     
@@ -455,7 +574,7 @@ Examples:
             print(df[['phoneme', 'sattva', 'rajas', 'tamas']].to_string(index=False))
             
             # Generate visualizations (Figures 1, 8 for Gunas analysis)
-            if HAS_VISUALIZER and not args.no_visual:
+            if HAS_VISUALIZER and args.visualize:
                 print(f"\nGenerating visualization figures for {len(df)} files...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')
@@ -477,7 +596,7 @@ Examples:
             print(f"Tamas:  {df['tamas'].mean():.3f} ± {df['tamas'].std():.3f}")
             
             # Generate visualizations (Figures 1, 8 for Gunas analysis)
-            if HAS_VISUALIZER and not args.no_visual:
+            if HAS_VISUALIZER and args.visualize:
                 print(f"\nGenerating visualization figures for {len(df)} files...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')
@@ -497,7 +616,7 @@ Examples:
         print(f"  Tamas (Instability):      {result['tamas']:.4f}")
         
         # Generate visualization for single file
-        if HAS_VISUALIZER and not args.no_visual:
+        if HAS_VISUALIZER and args.visualize:
             print("\nGenerating visualization figures...")
             from formant_visualizer import generate_all_figures
             visual_dir = os.path.join(output_dir, 'visual')

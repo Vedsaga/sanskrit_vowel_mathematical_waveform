@@ -384,9 +384,13 @@ def _style_axis(ax):
     ax.spines['right'].set_visible(False)
 
 
-def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str) -> pd.DataFrame:
-    """Compare all audio files in a folder against a reference file."""
+def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str, visualize: bool = False) -> pd.DataFrame:
+    """
+    Compare all audio files in a folder against a reference file.
+    Parallel execution with result caching.
+    """
     import glob
+    from common import process_batch_parallel
     
     os.makedirs(output_dir, exist_ok=True)
     
@@ -405,30 +409,60 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
         print(f"Error: Could not analyze reference file: {reference_file}")
         return None
     
-    all_comparisons = []
-    successful_results = []
+    # --- Check for existing results to skip ---
+    detailed_csv_path = os.path.join(output_dir, 'batch_dispersion_detailed.csv')
+    existing_df = None
+    processed_filenames = set()
+    
+    if os.path.exists(detailed_csv_path):
+        try:
+            existing_df = pd.read_csv(detailed_csv_path)
+            if 'filename' in existing_df.columns:
+                processed_filenames = set(existing_df['filename'].tolist())
+                print(f"Found existing results for {len(processed_filenames)} files. These will be skipped.")
+        except Exception as e:
+            print(f"Warning: Could not read existing results: {e}")
+            
+    # Filter files to process
+    files_to_process = []
+    skipped_count = 0
+    ref_filename = os.path.basename(reference_file)
     
     for wav_file in wav_files:
+        filename = os.path.basename(wav_file)
         if os.path.abspath(wav_file) == os.path.abspath(reference_file):
             continue
-        
-        print(f"\nAnalyzing: {os.path.basename(wav_file)}")
-        result = analyze_audio_file(wav_file)
-        
-        if result is None:
-            print(f"  ⚠ Skipped (could not extract formants)")
+            
+        if filename in processed_filenames:
+            skipped_count += 1
             continue
+            
+        files_to_process.append(wav_file)
         
-        successful_results.append(result)
-        
-        metrics = [
-            'f1_mean', 'f2_mean', 'f3_mean',
-            'sigma_formant_mean', 'dispersion_ratio_mean', 'formant_range_mean',
-            'sigma_formant_median', 'dispersion_ratio_median', 'formant_range_median',
-        ]
-        
-        comparison = {'filename': os.path.basename(wav_file)}
-        
+    print(f"Files to process: {len(files_to_process)} (Skipped: {skipped_count})")
+    
+    # --- Parallel Execution ---
+    new_results = []
+    if files_to_process:
+        print(f"\nStarting parallel analysis execution...")
+        new_results = process_batch_parallel(
+            files_to_process, 
+            analyze_audio_file, 
+            output_dir,
+            description="Analyzing audio files"
+        )
+    
+    all_comparisons = []
+    successful_results = new_results
+    
+    metrics = [
+        'f1_mean', 'f2_mean', 'f3_mean',
+        'sigma_formant_mean', 'dispersion_ratio_mean', 'formant_range_mean',
+        'sigma_formant_median', 'dispersion_ratio_median', 'formant_range_median',
+    ]
+    
+    def compute_comparison(result, ref_result):
+        comparison = {'filename': result['filename']}
         for metric in metrics:
             val_ref = ref_result.get(metric, np.nan)
             val_file = result.get(metric, np.nan)
@@ -438,19 +472,41 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
             comparison[f'{metric}'] = val_file
             comparison[f'{metric}_diff'] = diff
             comparison[f'{metric}_pct_diff'] = pct_diff
+        return comparison
+
+    for res in new_results:
+        all_comparisons.append(compute_comparison(res, ref_result))
         
-        all_comparisons.append(comparison)
+    # Merge with existing dataframe
+    if existing_df is not None and not existing_df.empty:
+        if all_comparisons:
+            new_df = pd.DataFrame(all_comparisons)
+            df = pd.concat([existing_df, new_df], ignore_index=True)
+        else:
+            df = existing_df
+            
+        # Reconstruct successful_results list from DF for plotting
+        reconstructed_results = []
+        for _, row in df.iterrows():
+            reconstructed_results.append({
+                'sigma_formant_mean': row.get('sigma_formant_mean', np.nan),
+                'dispersion_ratio_mean': row.get('dispersion_ratio_mean', np.nan)
+                # Add others if needed by plot
+            })
+        successful_results = reconstructed_results
+            
+    else:
+        if all_comparisons:
+            df = pd.DataFrame(all_comparisons)
+        else:
+            print("Error: No results produced")
+            return None
+            
+    # Save detailed results
+    df.to_csv(detailed_csv_path, index=False)
+    print(f"\nDetailed results updated: {detailed_csv_path}")
     
-    if not all_comparisons:
-        print("Error: No files could be analyzed")
-        return None
-    
-    df = pd.DataFrame(all_comparisons)
-    
-    csv_path = os.path.join(output_dir, 'batch_dispersion_detailed.csv')
-    df.to_csv(csv_path, index=False)
-    print(f"\nDetailed results saved to: {csv_path}")
-    
+    # Summary
     summary_metrics = ['sigma_formant_mean', 'dispersion_ratio_mean', 'formant_range_mean']
     
     summary_data = []
@@ -471,7 +527,8 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
     summary_df.to_csv(summary_path, index=False)
     print(f"Summary statistics saved to: {summary_path}")
     
-    create_batch_plots(ref_result, successful_results, df, output_dir)
+    if visualize and HAS_VISUALIZER:
+        create_batch_plots(ref_result, successful_results, df, output_dir)
     
     return df
 
@@ -856,8 +913,8 @@ Examples:
     parser.add_argument('--golden-compare', type=str, dest='golden_compare',
                         help='Path to cleaned data folder (golden mode)')
     parser.add_argument('--output_dir', type=str, default=None, help='Output directory for results')
-    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
-                        help='Skip generating visualization figures')
+    parser.add_argument('--visualize', action='store_true', dest='visualize',
+                        help='Generate visualization figures (opt-in)')
     
     args = parser.parse_args()
     
@@ -906,7 +963,12 @@ Examples:
         print(f"Folder: {args.folder}")
         print(f"Reference: {args.reference}")
         
-        results_df = batch_compare_folder(args.folder, args.reference, output_dir)
+        if not hasattr(args, 'visualize'):
+            print("DEBUG: args.visualize MISSING usually means parser issue")
+            print(f"DEBUG: Params found: {vars(args)}")
+            args.visualize = False
+
+        results_df = batch_compare_folder(args.folder, args.reference, output_dir, visualize=args.visualize)
         
         if results_df is not None:
             print("\n" + "=" * 60)
@@ -916,7 +978,7 @@ Examples:
             
             # Generate visualizations for ALL files in batch (parallel processing)
             # Only generate figures relevant to dispersion analysis: 1 (Temporal), 2 (Formant Structure), 3 (Geometry)
-            if HAS_VISUALIZER and not args.no_visual:
+            if HAS_VISUALIZER and args.visualize:
                 print(f"\nGenerating visualization figures for {len(results_df) + 1} files (parallel, 3 figs each)...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')

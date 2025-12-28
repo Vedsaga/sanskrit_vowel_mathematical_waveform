@@ -40,6 +40,8 @@ from .plotting import (
     COLORS
 )
 
+from .batch_processing import process_batch_parallel
+
 __all__ = [
     # Config
     'configure_matplotlib',
@@ -53,6 +55,8 @@ __all__ = [
     # Formant extraction
     'extract_formants_with_weights',
     'extract_raw_formant_trajectory',
+    # Batch Processing
+    'process_batch_parallel',
     # Plotting
     'apply_dark_theme',
     'create_styled_figure',

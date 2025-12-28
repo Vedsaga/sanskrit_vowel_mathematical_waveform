@@ -437,8 +437,21 @@ def create_comparison_plots(result1: dict, result2: dict, output_dir: str):
 
 
 def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str) -> pd.DataFrame:
-    """Compare all audio files in a folder against a reference file."""
+    """
+    Compare all audio files in a folder against a reference file.
+    Parallel execution with result caching.
+    
+    Args:
+        folder_path: Path to folder containing audio files
+        reference_file: Path to the reference (pinned) file to compare against
+        output_dir: Directory to save results
+    
+    Returns:
+        DataFrame with all comparison results
+    """
     import glob
+    from common import process_batch_parallel
+    
     os.makedirs(output_dir, exist_ok=True)
     
     wav_files = glob.glob(os.path.join(folder_path, '*.wav'))
@@ -455,19 +468,57 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
         print(f"Error: Could not analyze reference file")
         return None
     
+    # --- Check for existing results to skip ---
+    detailed_csv_path = os.path.join(output_dir, 'batch_amplitude_comparison.csv')
+    existing_df = None
+    processed_filenames = set()
+    
+    if os.path.exists(detailed_csv_path):
+        try:
+            existing_df = pd.read_csv(detailed_csv_path)
+            if 'filename' in existing_df.columns:
+                processed_filenames = set(existing_df['filename'].tolist())
+                print(f"Found existing results for {len(processed_filenames)} files. These will be skipped.")
+        except Exception as e:
+            print(f"Warning: Could not read existing results: {e}")
+            
+    # Filter files to process
+    files_to_process = []
+    skipped_count = 0
+    ref_filename = os.path.basename(reference_file)
+    
+    for wav_file in wav_files:
+        filename = os.path.basename(wav_file)
+        if os.path.abspath(wav_file) == os.path.abspath(reference_file):
+            continue
+            
+        if filename in processed_filenames:
+            skipped_count += 1
+            continue
+            
+        files_to_process.append(wav_file)
+        
+    print(f"Files to process: {len(files_to_process)} (Skipped: {skipped_count})")
+    
+    # --- Parallel Execution ---
+    new_results = []
+    if files_to_process:
+        print(f"\nStarting parallel analysis execution...")
+        new_results = process_batch_parallel(
+            files_to_process, 
+            analyze_audio_file, 
+            output_dir,
+            description="Analyzing audio files"
+        )
+    
+    # Process results with script-specific metrics
     all_comparisons = []
     metrics = ['a1_a2_ratio_mean', 'a2_a3_ratio_mean', 'a1_a3_ratio_mean',
                'log_a1_a2_mean', 'log_a2_a3_mean', 'h1_h2_mean']
     
-    for wav_file in tqdm(wav_files, desc="Analyzing files"):
-        if os.path.abspath(wav_file) == os.path.abspath(reference_file):
-            continue
-        
-        result = analyze_audio_file(wav_file)
-        if result is None:
-            continue
-        
-        comparison = {'filename': os.path.basename(wav_file)}
+    # Comparison helper
+    def compute_comparison(result, ref_result):
+        comparison = {'filename': result['filename']}
         for metric in metrics:
             val_ref = ref_result.get(metric, np.nan)
             val_file = result.get(metric, np.nan)
@@ -478,16 +529,28 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
             comparison[f'{metric}'] = val_file
             comparison[f'{metric}_diff'] = diff
             comparison[f'{metric}_pct_diff'] = pct_diff
+        return comparison
+
+    for res in new_results:
+        all_comparisons.append(compute_comparison(res, ref_result))
         
-        all_comparisons.append(comparison)
-    
-    if not all_comparisons:
-        return None
-    
-    df = pd.DataFrame(all_comparisons)
-    csv_path = os.path.join(output_dir, 'batch_amplitude_comparison.csv')
-    df.to_csv(csv_path, index=False)
-    print(f"\nResults saved to: {csv_path}")
+    # Merge with existing dataframe
+    if existing_df is not None and not existing_df.empty:
+        if all_comparisons:
+            new_df = pd.DataFrame(all_comparisons)
+            df = pd.concat([existing_df, new_df], ignore_index=True)
+        else:
+            df = existing_df
+    else:
+        if all_comparisons:
+            df = pd.DataFrame(all_comparisons)
+        else:
+            print("Error: No results produced")
+            return None
+            
+    # Save detailed results
+    df.to_csv(detailed_csv_path, index=False)
+    print(f"\nResults updated: {detailed_csv_path}")
     
     return df
 
@@ -634,8 +697,8 @@ Examples:
     parser.add_argument('--golden-compare', type=str, dest='golden_compare',
                         help='Cleaned data folder for golden comparison')
     parser.add_argument('--output_dir', type=str, default=None, help='Output directory')
-    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
-                        help='Skip generating visualization figures')
+    parser.add_argument('--visualize', action='store_true', dest='visualize',
+                        help='Generate visualization figures (opt-in)')
     
     args = parser.parse_args()
     
@@ -668,7 +731,7 @@ Examples:
     
     if batch_mode:
         results_df = batch_compare_folder(args.folder, args.reference, output_dir)
-        if results_df is not None and HAS_VISUALIZER and not args.no_visual:
+        if results_df is not None and HAS_VISUALIZER and args.visualize:
             print(f"\nGenerating visualization figures for {len(results_df) + 1} files...")
             from formant_visualizer import generate_batch_figures
             visual_base = os.path.join(output_dir, 'visual')
@@ -682,7 +745,7 @@ Examples:
             print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     elif golden_mode:
         results_df = compare_all_golden_files(args.golden_compare, output_dir)
-        if results_df is not None and HAS_VISUALIZER and not args.no_visual:
+        if results_df is not None and HAS_VISUALIZER and args.visualize:
             print(f"\nGenerating visualization figures for {len(results_df)} files...")
             from formant_visualizer import generate_batch_figures
             visual_base = os.path.join(output_dir, 'visual')
@@ -696,7 +759,7 @@ Examples:
             print(f"Visualizations saved to: {visual_base}/ ({successful}/{len(file_list)} files)")
     else:
         results_df = compare_two_files(args.file1, args.file2, output_dir)
-        if results_df is not None and HAS_VISUALIZER and not args.no_visual:
+        if results_df is not None and HAS_VISUALIZER and args.visualize:
             print("\nGenerating visualization figures...")
             from formant_visualizer import generate_batch_figures
             visual_base = os.path.join(output_dir, 'visual')

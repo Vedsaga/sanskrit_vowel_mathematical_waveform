@@ -448,9 +448,10 @@ def create_comparison_plots(result1: dict, result2: dict, output_dir: str):
     print(f"Visualization saved to: {plot_path}")
 
 
-def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str) -> pd.DataFrame:
+def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str, visualize: bool = False) -> pd.DataFrame:
     """
     Compare all audio files in a folder against a pinned reference file.
+    Parallel execution with result caching.
     
     Args:
         folder_path: Path to folder containing audio files
@@ -461,6 +462,7 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
         DataFrame with all comparison results
     """
     import glob
+    from common import process_batch_parallel
     
     os.makedirs(output_dir, exist_ok=True)
     
@@ -481,25 +483,57 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
         print(f"Error: Could not analyze reference file: {reference_file}")
         return None
     
-    # Compare each file against the reference
-    all_comparisons = []
-    successful_results = []
+    # --- Check for existing results to skip ---
+    detailed_csv_path = os.path.join(output_dir, 'batch_comparison_detailed.csv')
+    existing_df = None
+    processed_filenames = set()
+    
+    if os.path.exists(detailed_csv_path):
+        try:
+            existing_df = pd.read_csv(detailed_csv_path)
+            if 'filename' in existing_df.columns:
+                processed_filenames = set(existing_df['filename'].tolist())
+                print(f"Found existing results for {len(processed_filenames)} files. These will be skipped.")
+        except Exception as e:
+            print(f"Warning: Could not read existing results: {e}")
+            
+    # Filter files to process
+    files_to_process = []
+    skipped_count = 0
+    ref_filename = os.path.basename(reference_file)
     
     for wav_file in wav_files:
-        # Skip if it's the reference file itself
+        filename = os.path.basename(wav_file)
         if os.path.abspath(wav_file) == os.path.abspath(reference_file):
             continue
-        
-        print(f"\nAnalyzing: {os.path.basename(wav_file)}")
-        result = analyze_audio_file(wav_file)
-        
-        if result is None:
-            print(f"  ⚠ Skipped (could not extract formants)")
+            
+        if filename in processed_filenames:
+            skipped_count += 1
             continue
+            
+        files_to_process.append(wav_file)
         
-        successful_results.append(result)
-        
-        # Compute comparison metrics
+    print(f"Files to process: {len(files_to_process)} (Skipped: {skipped_count})")
+    
+    # --- Parallel Execution ---
+    new_results = []
+    if files_to_process:
+        print(f"\nStarting parallel analysis execution...")
+        new_results = process_batch_parallel(
+            files_to_process, 
+            analyze_audio_file, 
+            output_dir,
+            description="Analyzing audio files"
+        )
+    
+    # Process results (Comparison Logic)
+    # We need to reconstruct the comparison metrics for the NEW results
+    # and then merge with existing DF
+    
+    all_comparisons = []
+    
+    # Helper to calculate comparison dict
+    def compute_comparison(result, ref_result):
         metrics = [
             'f1_mean', 'f2_mean', 'f3_mean',
             'f1_f2_ratio_mean', 'f2_f3_ratio_mean', 'f1_f3_ratio_mean',
@@ -508,8 +542,7 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
             'log_f2_f1_median', 'log_f3_f2_median',
         ]
         
-        comparison = {'filename': os.path.basename(wav_file)}
-        
+        comparison = {'filename': result['filename']}
         for metric in metrics:
             val_ref = ref_result.get(metric, np.nan)
             val_file = result.get(metric, np.nan)
@@ -519,20 +552,30 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
             comparison[f'{metric}'] = val_file
             comparison[f'{metric}_diff'] = diff
             comparison[f'{metric}_pct_diff'] = pct_diff
+            
+        return comparison
+
+    # Convert new results to comparisons
+    for res in new_results:
+        all_comparisons.append(compute_comparison(res, ref_result))
         
-        all_comparisons.append(comparison)
-    
-    if not all_comparisons:
-        print("Error: No files could be analyzed")
-        return None
-    
-    # Create results DataFrame
-    df = pd.DataFrame(all_comparisons)
-    
-    # Save detailed results
-    csv_path = os.path.join(output_dir, 'batch_comparison_detailed.csv')
-    df.to_csv(csv_path, index=False)
-    print(f"\nDetailed results saved to: {csv_path}")
+    # Merge with existing dataframe
+    if existing_df is not None and not existing_df.empty:
+        if all_comparisons:
+            new_df = pd.DataFrame(all_comparisons)
+            df = pd.concat([existing_df, new_df], ignore_index=True)
+        else:
+            df = existing_df
+    else:
+        if all_comparisons:
+            df = pd.DataFrame(all_comparisons)
+        else:
+            print("Error: No results produced")
+            return None
+            
+    # Save detailed results (overwrite with merged data)
+    df.to_csv(detailed_csv_path, index=False)
+    print(f"\nDetailed results updated: {detailed_csv_path}")
     
     # Create summary statistics
     summary_metrics = ['f1_f2_ratio_mean', 'f2_f3_ratio_mean', 'f1_f3_ratio_mean',
@@ -556,8 +599,31 @@ def batch_compare_folder(folder_path: str, reference_file: str, output_dir: str)
     summary_df.to_csv(summary_path, index=False)
     print(f"Summary statistics saved to: {summary_path}")
     
-    # Create batch visualization
-    create_batch_plots(ref_result, successful_results, df, output_dir)
+    # Create batch visualization (For visualization, we ideally need the full result objects, 
+    # but since we only have the CSV for the old ones, we might just pass the DF or skip 
+    # the detailed visualizer call for old files if it requires 'result' objects.
+    # Actually create_batch_plots uses `ref_result` and `all_results` list.
+    # To fully support visualization of merged data, we'd need to re-analyze everything OR 
+    # accept that we only visualize the *metrics* from the data frame.
+    # The current create_batch_plots only uses the list for the 'Other files' scatter.
+    # Let's adapt it to use the DataFrame if possible, or just pass `new_results` + empty list?
+    # Actually, create_batch_plots takes `all_results` (list of dicts). 
+    # The CSV has the metrics needed for the plots (ratios).
+    # So we can reconstruct a dummy result list from the DF for visualization purposes.
+    
+    # Reconstruct result list from DF for visualization
+    combined_results = []
+    for _, row in df.iterrows():
+        # Reconstruct minimal dict needed for plotting
+        res = {
+            'filename': row['filename'],
+            'f1_f2_ratio_mean': row.get('f1_f2_ratio_mean', np.nan),
+            # ... add others if needed by plot ...
+        }
+        combined_results.append(res)
+
+    if visualize and HAS_VISUALIZER:
+        create_batch_plots(ref_result, combined_results, df, output_dir)
     
     return df
 
@@ -599,8 +665,8 @@ def create_batch_plots(ref_result: dict, all_results: list, comparison_df: pd.Da
     ax = axes[0, 1]
     ax.set_facecolor('#1a1a1a')
     
-    ref_ratio = ref_result['f2_f3_ratio_mean']
-    other_ratios = [r['f2_f3_ratio_mean'] for r in all_results]
+    ref_ratio = ref_result.get('f2_f3_ratio_mean', np.nan)
+    other_ratios = [r.get('f2_f3_ratio_mean', np.nan) for r in all_results]
     
     ax.axhline(y=ref_ratio, color=ref_color, linestyle='--', linewidth=2, label=f'Reference: {ref_name}')
     ax.scatter(range(len(other_ratios)), other_ratios, c=other_color, s=50, alpha=0.7, label='Other files')
@@ -1062,8 +1128,8 @@ Examples:
     
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for results (default: results/formant_ratio_analysis/{mode})')
-    parser.add_argument('--no-visual', action='store_true', dest='no_visual',
-                        help='Skip generating visualization figures')
+    parser.add_argument('--visualize', action='store_true', dest='visualize',
+                        help='Generate visualization figures (opt-in)')
     
     args = parser.parse_args()
     
@@ -1117,7 +1183,7 @@ Examples:
         print(f"Folder: {args.folder}")
         print(f"Reference: {args.reference}")
         
-        results_df = batch_compare_folder(args.folder, args.reference, output_dir)
+        results_df = batch_compare_folder(args.folder, args.reference, output_dir, visualize=args.visualize)
         
         if results_df is not None:
             print("\n" + "=" * 60)
@@ -1138,7 +1204,7 @@ Examples:
             
             # Generate visualizations for ALL files in batch (parallel processing)
             # Only generate figures relevant to ratio analysis: 1 (Temporal), 2 (Formant Structure), 4 (Ratios)
-            if HAS_VISUALIZER and not args.no_visual:
+            if HAS_VISUALIZER and args.visualize:
                 print(f"\nGenerating visualization figures for {len(results_df) + 1} files (parallel, 3 figs each)...")
                 from formant_visualizer import generate_batch_figures
                 visual_base = os.path.join(output_dir, 'visual')

@@ -25,9 +25,9 @@ except ImportError:
 try:
     from tqdm import tqdm as _tqdm
     HAS_TQDM = True
-    def tqdm(iterable, **kwargs):
+    def tqdm(iterable=None, **kwargs):
         """Wrapper for tqdm that works whether tqdm is installed or not."""
-        return _tqdm(iterable, **kwargs)
+        return _tqdm(iterable=iterable, **kwargs)
 except ImportError:
     HAS_TQDM = False
     def tqdm(iterable, **kwargs):

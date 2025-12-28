@@ -380,7 +380,7 @@ def analyze_audio_file(audio_path: str) -> dict:
     return result
 
 
-def compare_two_files(file1_path: str, file2_path: str, output_dir: str) -> pd.DataFrame:
+def compare_two_files(file1_path: str, file2_path: str, output_dir: str, visualize=False) -> pd.DataFrame:
     """
     Compare formant trajectories between two audio files.
     
@@ -444,7 +444,8 @@ def compare_two_files(file1_path: str, file2_path: str, output_dir: str) -> pd.D
         print(f"File 2 Effective Frames (N_eff): {result2['n_eff']:.2f}")
     
     # Create visualization
-    create_comparison_plots(result1, result2, output_dir)
+    if visualize:
+        create_comparison_plots(result1, result2, output_dir)
     
     return df
 
@@ -1251,7 +1252,7 @@ Examples:
             print(f"Error: File not found: {args.file2}")
             return
         
-        results_df = compare_two_files(args.file1, args.file2, output_dir)
+        results_df = compare_two_files(args.file1, args.file2, output_dir, visualize=args.visualize)
         
         if results_df is not None:
             print("\n" + "=" * 60)

@@ -369,7 +369,7 @@ def analyze_audio_file(audio_path: str) -> dict:
     }
 
 
-def compare_two_files(file1_path: str, file2_path: str, output_dir: str) -> pd.DataFrame:
+def compare_two_files(file1_path: str, file2_path: str, output_dir: str, visualize=False) -> pd.DataFrame:
     """
     Compare stability metrics between two audio files.
     
@@ -427,7 +427,8 @@ def compare_two_files(file1_path: str, file2_path: str, output_dir: str) -> pd.D
         print(f"File 2 Full Utterance Effective Frames (N_eff): {result2['full_utterance']['n_eff']:.2f}")
     
     # Create visualization
-    create_comparison_plots(result1, result2, output_dir)
+    if visualize:
+        create_comparison_plots(result1, result2, output_dir)
     
     return df
 
@@ -1152,7 +1153,7 @@ Examples:
         
         print(f"\nMode: SINGLE COMPARISON")
         
-        results_df = compare_two_files(args.file1, args.file2, output_dir)
+        results_df = compare_two_files(args.file1, args.file2, output_dir, visualize=args.visualize)
         
         if results_df is not None:
             print("\n" + "=" * 60)

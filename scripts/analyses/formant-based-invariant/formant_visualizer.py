@@ -255,7 +255,7 @@ def figure_temporal_anchor(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 1 saved: {output_path}")
 
@@ -307,7 +307,7 @@ def figure_formant_structure(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 2 saved: {output_path}")
 
@@ -373,7 +373,7 @@ def figure_formant_geometry(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 3 saved: {output_path}")
 
@@ -418,7 +418,7 @@ def figure_scale_invariant_ratios(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 4 saved: {output_path}")
 
@@ -480,7 +480,7 @@ def figure_spectral_envelope(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 5 saved: {output_path}")
 
@@ -546,7 +546,7 @@ def figure_spectral_tilt(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 6 saved: {output_path}")
 
@@ -610,7 +610,7 @@ def figure_harmonics_vs_formants(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 7 saved: {output_path}")
 
@@ -722,7 +722,7 @@ def figure_residual_dynamics(data, output_path, quiet=False):
              ha='center', color=ENVELOPE_COLOR, fontsize=10, style='italic')
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])
-    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, facecolor=BG_COLOR)
     plt.close()
     print(f"  ✓ Figure 8 saved: {output_path}")
 
@@ -771,14 +771,14 @@ def generate_all_figures(audio_path, output_dir, formant_data=None, figures=None
     generated = []
     
     figure_funcs = {
-        1: ('01_temporal_anchor.png', figure_temporal_anchor),
-        2: ('02_formant_structure.png', figure_formant_structure),
-        3: ('03_formant_geometry.png', figure_formant_geometry),
-        4: ('04_scale_invariant_ratios.png', figure_scale_invariant_ratios),
-        5: ('05_spectral_envelope.png', figure_spectral_envelope),
-        6: ('06_spectral_tilt.png', figure_spectral_tilt),
-        7: ('07_harmonics_vs_formants.png', figure_harmonics_vs_formants),
-        8: ('08_residual_dynamics.png', figure_residual_dynamics),
+        1: ('01_temporal_anchor.jpg', figure_temporal_anchor),
+        2: ('02_formant_structure.jpg', figure_formant_structure),
+        3: ('03_formant_geometry.jpg', figure_formant_geometry),
+        4: ('04_scale_invariant_ratios.jpg', figure_scale_invariant_ratios),
+        5: ('05_spectral_envelope.jpg', figure_spectral_envelope),
+        6: ('06_spectral_tilt.jpg', figure_spectral_tilt),
+        7: ('07_harmonics_vs_formants.jpg', figure_harmonics_vs_formants),
+        8: ('08_residual_dynamics.jpg', figure_residual_dynamics),
     }
     
     if not quiet:
@@ -799,6 +799,7 @@ def generate_all_figures(audio_path, output_dir, formant_data=None, figures=None
         print(f"Generated {len(generated)}/{len(figures)} figures")
         print(f"{'='*60}\n")
     
+    plt.close('all') # Ensure all figures are closed and memory is freed
     return generated
 
 
@@ -818,10 +819,10 @@ def generate_batch_figures(file_list, output_base_dir, workers=4, quiet=True, fi
     """
     os.makedirs(output_base_dir, exist_ok=True)
     
-    fig_names = {1: '01_temporal_anchor.png', 2: '02_formant_structure.png', 
-                 3: '03_formant_geometry.png', 4: '04_scale_invariant_ratios.png',
-                 5: '05_spectral_envelope.png', 6: '06_spectral_tilt.png',
-                 7: '07_harmonics_vs_formants.png', 8: '08_residual_dynamics.png'}
+    fig_names = {1: '01_temporal_anchor.jpg', 2: '02_formant_structure.jpg', 
+                 3: '03_formant_geometry.jpg', 4: '04_scale_invariant_ratios.jpg',
+                 5: '05_spectral_envelope.jpg', 6: '06_spectral_tilt.jpg',
+                 7: '07_harmonics_vs_formants.jpg', 8: '08_residual_dynamics.jpg'}
     
     successful = 0
     
@@ -837,7 +838,7 @@ def generate_batch_figures(file_list, output_base_dir, workers=4, quiet=True, fi
         
         # Skip if already exists (check first figure in requested list)
         first_fig = figures[0] if figures else 1
-        marker_file = os.path.join(output_dir, fig_names.get(first_fig, '01_temporal_anchor.png'))
+        marker_file = os.path.join(output_dir, fig_names.get(first_fig, '01_temporal_anchor.jpg'))
         if os.path.exists(marker_file):
             successful += 1
             continue
